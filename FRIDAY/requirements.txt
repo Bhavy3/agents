@@ -1,0 +1,7 @@
+pydantic>=2.0
+rich>=13.0
+pytest>=8.0
+colorlog>=6.0
+
+# Do not install a third-party `asyncio` package.
+# `asyncio` is part of Python 3.12+ standard library.

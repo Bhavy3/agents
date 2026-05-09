@@ -1,0 +1,264 @@
+import asyncio
+import time
+import uuid
+
+from core.events.bus import EventBus
+from core.events.event_types import EventType
+from core.events.models import Event
+from core.workers.base_worker import BaseWorker
+from core.router.intent_router import IntentRouter
+from core.llm.streaming_worker import StreamingLlmWorker
+
+
+class OrchestratorWorker(BaseWorker):
+    """Coordinates conversation turns, routing, and interruptions."""
+
+    def __init__(
+        self,
+        event_bus: EventBus,
+        intent_router: IntentRouter,
+        streaming_worker: StreamingLlmWorker,
+        max_context_turns: int = 10,
+        response_timeout_seconds: float = 30.0,
+    ) -> None:
+        super().__init__("orchestrator", event_bus)
+        self.intent_router = intent_router
+        self.streaming_worker = streaming_worker
+        self.max_context_turns = max_context_turns
+        self.response_timeout_seconds = response_timeout_seconds
+
+        self.active_turn_id: str | None = None
+        self.active_speaker: str | None = None
+        self.context: list[dict[str, str]] = []
+        self._routing_task: asyncio.Task | None = None
+        self._last_activity_time = time.perf_counter()
+
+        # Stats
+        self.active_conversations = 0
+        self.interruptions = 0
+        self.stale_drops = 0
+        self.total_latency = 0.0
+        self.routed_messages = 0
+
+    async def run(self) -> None:
+        self.event_bus.subscribe(EventType.STT_FINAL_TRANSCRIPT, self._handle_final_transcript)
+        self.event_bus.subscribe(EventType.SPEECH_STARTED, self._handle_speech_started)
+
+        # Map LLM Stream events to Conversation events
+        self.event_bus.subscribe(EventType.STREAM_STARTED, self._handle_stream_started)
+        self.event_bus.subscribe(EventType.STREAM_CHUNK, self._handle_stream_chunk)
+        self.event_bus.subscribe(EventType.STREAM_COMPLETED, self._handle_stream_completed)
+        self.event_bus.subscribe(EventType.STREAM_CANCELLED, self._handle_stream_cancelled)
+        self.event_bus.subscribe(EventType.STREAM_TIMEOUT, self._handle_stream_timeout)
+
+        # Handle CLI fallback if needed (Command console input bypasses STT)
+        self.event_bus.subscribe(EventType.USER_TEXT_RECEIVED, self._handle_cli_text)
+        await super().run()
+
+    async def _handle_speech_started(self, event: Event) -> None:
+        """User started speaking. Interrupt any active assistant response."""
+        self._last_activity_time = time.perf_counter()
+        
+        if self.active_speaker == "assistant" or self._routing_task is not None:
+            self.interruptions += 1
+            self.logger.info("conversation_interrupted", extra={"turn_id": self.active_turn_id})
+            
+            # Cancel active routing/inference
+            if self._routing_task and not self._routing_task.done():
+                self._routing_task.cancel()
+            self.streaming_worker.cancel_all()
+            
+            if self.active_turn_id:
+                await self.event_bus.publish(
+                    Event.create(
+                        EventType.CONVERSATION_INTERRUPTED,
+                        {"turn_id": self.active_turn_id, "reason": "user_interruption"},
+                        self.name
+                    )
+                )
+                
+            self.active_speaker = "user"
+            self._routing_task = None
+
+    async def _handle_final_transcript(self, event: Event) -> None:
+        """Process finalized text from STT."""
+        text = event.payload.get("text", "").strip()
+        if not text:
+            return
+            
+        await self._handle_speech_started(event)
+        await self._initiate_turn(text, event.correlation_id)
+
+    async def _handle_cli_text(self, event: Event) -> None:
+        """Process text directly from CLI."""
+        text = event.payload.get("text", "").strip()
+        if not text:
+            return
+            
+        # Cancel active turn if CLI is used
+        await self._handle_speech_started(event)
+        await self._initiate_turn(text, event.correlation_id)
+
+    async def _initiate_turn(self, text: str, correlation_id: str | None) -> None:
+        self._last_activity_time = time.perf_counter()
+        self.active_turn_id = str(uuid.uuid4())[:8]
+        self.active_speaker = "user"
+        
+        await self.event_bus.publish(
+            Event.create(
+                EventType.CONVERSATION_TURN_STARTED,
+                {"turn_id": self.active_turn_id, "speaker": "user"},
+                self.name,
+                correlation_id
+            )
+        )
+        
+        await self.event_bus.publish(
+            Event.create(
+                EventType.USER_MESSAGE_RECEIVED,
+                {"turn_id": self.active_turn_id, "text": text},
+                self.name,
+                correlation_id
+            )
+        )
+        
+        # Append to context
+        self.context.append({"role": "user", "content": text})
+        if len(self.context) > self.max_context_turns * 2:
+            self.context = self.context[-(self.max_context_turns * 2):]
+            
+        # Yield to assistant
+        self.active_speaker = "assistant"
+        
+        # Spawn routing task so Orchestrator remains unblocked
+        self._routing_task = asyncio.create_task(
+            self._route_and_execute(text, self.active_turn_id, correlation_id)
+        )
+
+    async def _route_and_execute(self, text: str, turn_id: str, correlation_id: str | None) -> None:
+        start_time = time.perf_counter()
+        try:
+            # We call the handler from IntentRouter directly, mimicking what it used to do
+            # But we wrap it in a mock event
+            mock_event = Event.create(EventType.USER_MESSAGE_RECEIVED, {"text": text}, self.name, correlation_id)
+            await self.intent_router.handle_user_text(mock_event)
+            self.routed_messages += 1
+            
+            # If the routing finishes successfully
+            duration = time.perf_counter() - start_time
+            await self.event_bus.publish(
+                Event.create(
+                    EventType.CONVERSATION_TURN_ENDED,
+                    {"turn_id": turn_id, "duration": round(duration, 3)},
+                    self.name,
+                    correlation_id
+                )
+            )
+        except asyncio.CancelledError:
+            self.logger.info("routing_cancelled", extra={"turn_id": turn_id})
+            # Cancellation is handled in _handle_speech_started
+        except Exception as e:
+            self.logger.error("routing_failed", extra={"error": str(e), "turn_id": turn_id})
+        finally:
+            if self.active_turn_id == turn_id:
+                self._routing_task = None
+
+    # Translating LLM Stream Events to Conversation Events
+    async def _handle_stream_started(self, event: Event) -> None:
+        if self.active_speaker != "assistant":
+            return
+        await self.event_bus.publish(
+            Event.create(
+                EventType.ASSISTANT_RESPONSE_STARTED,
+                {"turn_id": self.active_turn_id},
+                self.name,
+                event.correlation_id
+            )
+        )
+
+    async def _handle_stream_chunk(self, event: Event) -> None:
+        if self.active_speaker != "assistant":
+            return
+        await self.event_bus.publish(
+            Event.create(
+                EventType.ASSISTANT_RESPONSE_PARTIAL,
+                {"turn_id": self.active_turn_id, "text": event.payload.get("chunk", "")},
+                self.name,
+                event.correlation_id
+            )
+        )
+
+    async def _handle_stream_completed(self, event: Event) -> None:
+        if self.active_speaker != "assistant":
+            return
+            
+        full_text = event.payload.get("full_text", "")
+        self.context.append({"role": "assistant", "content": full_text})
+            
+        await self.event_bus.publish(
+            Event.create(
+                EventType.ASSISTANT_RESPONSE_COMPLETED,
+                {"turn_id": self.active_turn_id, "text": full_text},
+                self.name,
+                event.correlation_id
+            )
+        )
+
+    async def _handle_stream_cancelled(self, event: Event) -> None:
+        if self.active_speaker != "assistant":
+            return
+        await self.event_bus.publish(
+            Event.create(
+                EventType.ASSISTANT_RESPONSE_CANCELLED,
+                {"turn_id": self.active_turn_id, "reason": event.payload.get("reason", "unknown")},
+                self.name,
+                event.correlation_id
+            )
+        )
+
+    async def _handle_stream_timeout(self, event: Event) -> None:
+        if self.active_speaker != "assistant":
+            return
+        await self.event_bus.publish(
+            Event.create(
+                EventType.CONVERSATION_TIMEOUT,
+                {"turn_id": self.active_turn_id, "timeout_type": event.payload.get("timeout_type", "unknown")},
+                self.name,
+                event.correlation_id
+            )
+        )
+
+    async def work(self) -> None:
+        try:
+            while not self.should_stop:
+                self.heartbeat(f"orchestrator [routed={self.routed_messages} interrupts={self.interruptions}]")
+                await asyncio.sleep(1.0)
+                
+                # Check for inactive conversation timeout (e.g., reset context after 5 mins)
+                now = time.perf_counter()
+                if now - self._last_activity_time > 300.0 and len(self.context) > 0:
+                    self.logger.info("conversation_context_reset_timeout")
+                    self.context.clear()
+                    self.active_turn_id = None
+                    self.active_speaker = None
+                    
+                # Check response generation timeout (if stuck in routing for too long)
+                if self.active_speaker == "assistant" and self._routing_task and not self._routing_task.done():
+                    if now - self._last_activity_time > self.response_timeout_seconds:
+                        self.logger.warning("conversation_response_timeout", extra={"turn_id": self.active_turn_id})
+                        self._routing_task.cancel()
+                        self.streaming_worker.cancel_all()
+                        
+                        if self.active_turn_id:
+                            await self.event_bus.publish(
+                                Event.create(
+                                    EventType.CONVERSATION_TIMEOUT,
+                                    {"turn_id": self.active_turn_id, "timeout_type": "routing_timeout"},
+                                    self.name
+                                )
+                            )
+                        self.active_speaker = None
+                        self._routing_task = None
+                        
+        except asyncio.CancelledError:
+            pass

@@ -31,7 +31,8 @@ class BaseWorker(ABC):
         try:
             self.health.mark_alive("running")
             await self.work()
-        except Exception:
+        except Exception as e:
+            self.logger.exception(f"Worker {self.name} failed during run: {str(e)}")
             self.health.mark_failed()
             raise
         finally:

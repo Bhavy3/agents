@@ -8,6 +8,9 @@ from core.events.models import Event
 from core.workers.base_worker import BaseWorker
 from core.router.intent_router import IntentRouter
 from core.llm.streaming_worker import StreamingLlmWorker
+from core.personality.prompt_personality import PersonalityPromptInjector
+from core.personality.models import PersonaMode, StyleConfig
+from core.personality.presence import PresenceManager
 
 
 class OrchestratorWorker(BaseWorker):
@@ -26,8 +29,12 @@ class OrchestratorWorker(BaseWorker):
         self.streaming_worker = streaming_worker
         self.max_context_turns = max_context_turns
         self.response_timeout_seconds = response_timeout_seconds
-
+        self.injector = PersonalityPromptInjector()
+        self.presence = PresenceManager()
+        
         self.active_turn_id: str | None = None
+        self.current_mode = PersonaMode.ENGINEERING
+        self.current_style = StyleConfig(tone="focused", verbosity="concise", pacing="normal")
         self.active_speaker: str | None = None
         self.context: list[dict[str, str]] = []
         self._routing_task: asyncio.Task | None = None
@@ -53,6 +60,9 @@ class OrchestratorWorker(BaseWorker):
 
         # Handle CLI fallback if needed (Command console input bypasses STT)
         self.event_bus.subscribe(EventType.USER_TEXT_RECEIVED, self._handle_cli_text)
+        
+        # Personality updates
+        self.event_bus.subscribe(EventType.PERSONALITY_STYLE_UPDATED, self._handle_personality_update)
         await super().run()
 
     async def _handle_speech_started(self, event: Event) -> None:
@@ -122,6 +132,21 @@ class OrchestratorWorker(BaseWorker):
             )
         )
         
+        # Human presence: Simulated thinking delay
+        await self.presence.simulate_thinking_delay(self.current_style)
+        
+        # Human presence: Acknowledgment
+        ack = self.presence.get_acknowledgment(self.current_style)
+        if ack:
+            await self.event_bus.publish(
+                Event.create(
+                    EventType.ASSISTANT_RESPONSE_PARTIAL,
+                    {"turn_id": self.active_turn_id, "text": ack + " "},
+                    self.name,
+                    correlation_id
+                )
+            )
+
         # Append to context
         self.context.append({"role": "user", "content": text})
         if len(self.context) > self.max_context_turns * 2:
@@ -135,13 +160,26 @@ class OrchestratorWorker(BaseWorker):
             self._route_and_execute(text, self.active_turn_id, correlation_id)
         )
 
+    async def _handle_personality_update(self, event: Event) -> None:
+        self.current_mode = PersonaMode(event.payload["persona_mode"])
+        style_data = event.payload["style_config"]
+        self.current_style = StyleConfig(
+            tone=style_data["tone"],
+            verbosity=style_data["verbosity"],
+            pacing=style_data["pacing"],
+            humor_level=style_data.get("humor_level", 0.0)
+        )
+
     async def _route_and_execute(self, text: str, turn_id: str, correlation_id: str | None) -> None:
         start_time = time.perf_counter()
         try:
+            # Generate personality instructions
+            personality_instructions = self.injector.get_style_instructions(self.current_style, self.current_mode)
+            
             # We call the handler from IntentRouter directly, mimicking what it used to do
             # But we wrap it in a mock event
             mock_event = Event.create(EventType.USER_MESSAGE_RECEIVED, {"text": text}, self.name, correlation_id)
-            await self.intent_router.handle_user_text(mock_event)
+            await self.intent_router.handle_user_text(mock_event, personality_instructions=personality_instructions)
             self.routed_messages += 1
             
             # If the routing finishes successfully

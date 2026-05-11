@@ -38,10 +38,10 @@ class LlmFallbackRouter:
         self.event_bus = event_bus
         self.streaming_worker = streaming_worker
 
-    async def route(self, text: str, correlation_id: str | None = None) -> Intent:
+    async def route(self, text: str, correlation_id: str | None = None, personality_instructions: str = "") -> Intent:
         await self._emit(EventType.LLM_REQUEST_SENT, {"model": self.ollama.model, "prompt_preview": text[:100]}, correlation_id)
 
-        raw_response, metrics = await self.ollama.generate(self._build_prompt(text))
+        raw_response, metrics = await self.ollama.generate(self._build_prompt(text, personality_instructions))
 
         if not metrics.success:
             await self._emit(EventType.LLM_FAILURE, {"error": metrics.error or "unknown", "model": metrics.model}, correlation_id)
@@ -76,9 +76,9 @@ class LlmFallbackRouter:
 
         return Intent(name=intent_name, confidence=parsed.confidence, parameters=parameters, source="ollama_reasoning")
 
-    def _build_prompt(self, text: str) -> str:
+    def _build_prompt(self, text: str, personality_instructions: str = "") -> str:
         history = "\n".join(f"User: {h.command} -> {h.success}" for h in self.history.recent()[-5:])
-        return f"{SYSTEM_PROMPT}\n\nHistory:\n{history}\n\nUser Input: {text}\n\nJSON:"
+        return f"{SYSTEM_PROMPT}\n{personality_instructions}\n\nHistory:\n{history}\n\nUser Input: {text}\n\nJSON:"
 
     def _fallback(self, text: str) -> Intent:
         return Intent(name=IntentName.CHAT, confidence=0.1, parameters={"text": text}, source="llm_fallback_error")

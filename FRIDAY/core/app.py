@@ -10,8 +10,8 @@ from core.diagnostics.replay import FailureReplayRecorder
 from core.events.bus import EventBus
 from core.events.event_types import EventType
 from core.events.models import Event
+from core.tools.tool_worker import ToolWorker
 from core.executor.command_registry import CommandRegistry
-from core.executor.executor import CommandExecutor
 from core.logging.logger import configure_logging, get_logger, shutdown_logging
 from core.llm.ollama_client import OllamaClient
 from core.llm.stream_aggregator import ResponseAggregator
@@ -22,7 +22,12 @@ from core.recovery.healthcheck import HealthcheckWorker
 from core.recovery.recovery_manager import RecoveryManager
 from core.router.intent_router import IntentRouter
 from core.memory.memory_worker import MemoryWorker
+from core.vision.screen_capture import ScreenCaptureWorker
+from core.vision.ocr_worker import OCRWorker
+from core.vision.window_monitor import WindowMonitorWorker
+from core.vision.visual_context import VisualContextManager
 from core.validation.runtime_validator import RuntimeValidationReport, RuntimeValidator, ValidationCrashWorker
+from core.personality.personality_worker import PersonalityWorker
 from core.workers.supervisor import WorkerSupervisor
 from interfaces.cli.health_dashboard import TerminalHealthDashboard
 from interfaces.cli.terminal_ui import TerminalUI
@@ -67,13 +72,14 @@ class FridayApp:
             streaming_worker=self.streaming_worker,
         )
         self.intent_router = IntentRouter(self.event_bus, llm_fallback=self.llm_fallback)
-        self.executor = CommandExecutor(
-            self.event_bus,
-            self.command_registry,
-            self.command_history,
-            command_timeout_seconds=self.settings.command_timeout_seconds,
-        )
+        self.tool_worker = ToolWorker(self.event_bus, metrics=self.metrics)
         self.memory_worker = MemoryWorker(self.event_bus, metrics=self.metrics)
+        self.screen_capture = ScreenCaptureWorker(self.event_bus, metrics=self.metrics)
+        self.ocr_worker = OCRWorker(self.event_bus, metrics=self.metrics)
+        self.window_monitor = WindowMonitorWorker(self.event_bus)
+        self.visual_context = VisualContextManager(self.event_bus)
+        self.visual_context.start()
+        self.personality_worker = PersonalityWorker(self.event_bus)
         self.recovery_manager = RecoveryManager(self.event_bus)
         healthcheck_interval = max(1.0, min(30.0, self.settings.worker_heartbeat_timeout_seconds / 3))
         from core.audio.transport import AudioTransportWorker
@@ -103,8 +109,12 @@ class FridayApp:
                 SttWorker(self.event_bus),
                 orchestrator,
                 tts_worker,
-                self.executor,
+                self.tool_worker,
+                self.personality_worker,
                 self.memory_worker,
+                self.screen_capture,
+                self.ocr_worker,
+                self.window_monitor,
             ],
             metrics=self.metrics,
             heartbeat_timeout_seconds=self.settings.worker_heartbeat_timeout_seconds,

@@ -20,9 +20,9 @@ class IntentRouter:
     async def start(self) -> None:
         self.logger.info("intent_router_ready_for_orchestrator")
 
-    async def handle_user_text(self, event: Event) -> None:
+    async def handle_user_text(self, event: Event, personality_instructions: str = "") -> None:
         text = str(event.payload.get("text", "")).strip()
-        intent = await self.route(text, correlation_id=event.correlation_id)
+        intent = await self.route(text, correlation_id=event.correlation_id, personality_instructions=personality_instructions)
         action_id = str(uuid.uuid4())
         await self.event_bus.publish(
             Event.create(
@@ -37,8 +37,8 @@ class IntentRouter:
             )
         )
 
-    async def route(self, text: str, correlation_id: str | None = None) -> Intent:
+    async def route(self, text: str, correlation_id: str | None = None, personality_instructions: str = "") -> Intent:
         rule_intent = route_by_rules(text)
         if rule_intent is not None:
             return rule_intent
-        return await self.llm_fallback.route(text, correlation_id=correlation_id)
+        return await self.llm_fallback.route(text, correlation_id=correlation_id, personality_instructions=personality_instructions)

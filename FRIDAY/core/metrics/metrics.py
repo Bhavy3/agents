@@ -25,6 +25,24 @@ class RuntimeMetrics:
     memory_db_latency_ms: float = 0.0
     degraded_memory_mode: bool = False
 
+    # Vision Metrics
+    screenshots_captured: int = 0
+    ocr_requests: int = 0
+    ocr_failures: int = 0
+    visual_context_requests: int = 0
+    vision_degraded_mode: bool = False
+    average_ocr_latency_ms: float = 0.0
+
+    # Tool Runtime Metrics
+    tools_executed: int = 0
+    tools_cancelled: int = 0
+    tools_denied: int = 0
+    action_graphs_executed: int = 0
+    action_graph_failures: int = 0
+    average_tool_latency_ms: float = 0.0
+    subprocess_count: int = 0
+    tool_runtime_degraded_mode: bool = False
+
     def record_processed_event(self, duration_seconds: float) -> None:
         self.processed_events += 1
         self.total_processing_time_seconds += duration_seconds

@@ -78,15 +78,6 @@ EVENT_CONTRACTS: dict[EventType, PayloadSchema] = {
     EventType.TTS_TIMEOUT: {"timeout_type": str},
     EventType.TTS_MODEL_ERROR: {"error": str},
     EventType.TTS_QUEUE_DROPPED: {"reason": str},
-    EventType.ACTION_REQUESTED: {"action_id": str, "intent": str, "parameters": dict},
-    EventType.ACTION_VALIDATED: {"action_id": str, "allowed": bool, "requires_confirmation": bool, "risk_level": str},
-    EventType.ACTION_STARTED: {"action_id": str},
-    EventType.ACTION_COMPLETED: {"action_id": str, "result": object},
-    EventType.ACTION_FAILED: {"action_id": str, "error": str},
-    EventType.ACTION_CANCELLED: {"action_id": str, "reason": str},
-    EventType.ACTION_TIMEOUT: {"action_id": str},
-    EventType.ACTION_DENIED: {"action_id": str, "reason": str},
-    EventType.ACTION_QUARANTINED: {"action_id": str, "reason": str},
 
     # Memory
     EventType.MEMORY_WRITE_REQUEST: {"type": str, "content": str},
@@ -96,6 +87,38 @@ EVENT_CONTRACTS: dict[EventType, PayloadSchema] = {
     EventType.MEMORY_DENIED: {"id": str, "reason": str},
     EventType.MEMORY_FAILURE: {"operation": str, "error": str},
     EventType.MEMORY_CONTEXT_READY: {"context": str},
+
+    # Vision
+    EventType.SCREEN_CAPTURE_REQUESTED: {},
+    EventType.SCREEN_CAPTURE_COMPLETED: {"image_bytes": bytes, "width": int, "height": int},
+    EventType.SCREEN_CAPTURE_FAILED: {"error": str},
+    EventType.OCR_REQUESTED: {"image_bytes": bytes},
+    EventType.OCR_COMPLETED: {"text": str, "latency_ms": float},
+    EventType.OCR_FAILED: {"error": str},
+    EventType.WINDOW_FOCUS_CHANGED: {"title": str},
+    EventType.ACTIVE_WINDOW_CONTEXT_READY: {"title": str, "app_name": str},
+    EventType.VISUAL_CONTEXT_REQUESTED: {},
+    EventType.VISUAL_CONTEXT_READY: {"summary": str},
+    EventType.VISION_DEGRADED_MODE: {"reason": str, "component": str},
+
+    # Action Runtime
+    EventType.ACTION_REQUESTED: {"intent": str, "parameters": dict},
+    EventType.ACTION_VALIDATED: {"tool_name": str, "risk_level": str},
+    EventType.ACTION_STARTED: {"tool_name": str},
+    EventType.ACTION_COMPLETED: {"success": bool, "output": str, "error": (str, type(None))},
+    EventType.ACTION_FAILED: {"error": str},
+    EventType.ACTION_CANCELLED: {"tool_name": str},
+    EventType.ACTION_TIMEOUT: {"tool_name": str},
+    EventType.ACTION_DENIED: {"reason": str, "tool_name": str},
+    EventType.ACTION_CONFIRMATION_REQUIRED: {"correlation_id": str, "tool_name": str, "risk_level": str},
+    EventType.ACTION_GRAPH_STARTED: {"graph_id": str, "node_count": int},
+    EventType.ACTION_GRAPH_COMPLETED: {"graph_id": str, "success": bool},
+    EventType.ACTION_GRAPH_FAILED: {"graph_id": str, "error": str},
+
+    # Personality & Presence
+    EventType.PERSONALITY_STYLE_UPDATED: {"persona_mode": str, "emotion_state": str, "style_config": dict},
+    EventType.EMOTION_DETECTED: {"emotion": str, "confidence": float},
+    EventType.PRESENCE_MODE_CHANGED: {"mode": str},
 }
 
 def validate_event_payload(event_type: EventType, payload: dict[str, Any]) -> None:

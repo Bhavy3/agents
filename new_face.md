@@ -1,242 +1,219 @@
-PHASE 7.0 — Persistent Memory + Personal Context Runtime
+Phase 11.0 — Autonomous Workflow Intelligence
+Goal
 
-MISSION
-Implement a deterministic, interruption-safe persistent memory subsystem for FRIDAY.
+Turn FRIDAY from:
 
-The runtime owns memory.
-The LLM NEVER directly controls persistence.
+Reactive Assistant
 
-GOALS
-- Persistent user memory across sessions
-- Fast deterministic recall
-- Strict safety validation
-- Fully isolated failure handling
-- Zero impact on audio/orchestrator stability
+into:
 
-==================================================
-CREATE ONLY THESE FILES
-==================================================
+Goal-Oriented Runtime
 
-core/
- ├── memory/
- │    ├── memory_worker.py
- │    ├── memory_store.py
- │    ├── memory_index.py
- │    ├── memory_models.py
- │    └── memory_validator.py
+WITHOUT creating:
 
-==================================================
-DO NOT CREATE
-==================================================
+uncontrolled autonomy
+recursive agents
+self-prompt loops
+runaway planners
 
-- vector databases
-- embeddings
-- semantic search
-- ORM systems
-- plugin systems
-- retry frameworks
-- dependency injection
-- cloud sync
-- giant abstractions
-- automatic memory agents
+This phase adds:
 
-==================================================
-MEMORY MODEL
-==================================================
+bounded planning
+workflow execution
+recovery logic
+multi-step reasoning
+safe autonomous sequencing
+What Phase 11 Adds
+1. Workflow Engine
 
-Every memory record MUST contain:
+Create:
 
-- id
-- type
-- content
-- created_at
-- updated_at
-- source
-- confidence
-- explicit_user_approved
+core/workflows/workflow_engine.py
 
-Allowed memory types:
+Purpose:
+Execute bounded multi-step tasks safely.
 
-- preference
-- alias
-- pinned_note
-- approved_fact
-- conversation_summary
+Example:
 
-Use dataclasses only.
-No pydantic.
+Workflow(
+    goal="debug supervisor issue",
+    steps=[
+        "open_logs",
+        "search_failures",
+        "summarize_root_cause",
+    ]
+)
+2. Planner (Bounded)
 
-==================================================
-MEMORY STORAGE
-==================================================
+Create:
 
-Use SQLite ONLY.
+core/workflows/planner.py
 
-Requirements:
-- single lightweight connection manager
-- async-safe using asyncio.to_thread()
-- graceful handling of sqlite lock errors
-- degraded mode if DB corrupted
-- no runtime crash propagation
+STRICT LIMITS:
 
-Database file:
-data/memory/friday_memory.db
+max 5 steps
+no recursion
+no self-replanning loops
+no autonomous internet exploration
 
-==================================================
-MEMORY VALIDATION
-==================================================
+Planner only:
 
-Reject memory entries containing:
-- passwords
-- API keys
-- access tokens
-- SSH keys
-- JWT-like strings
-- dangerous shell commands
-- executable blobs
-- oversized payloads
+decomposes tasks
+selects tools
+tracks progress
+3. Workflow State Machine
 
-Hard limits:
-- max memory size
-- max query size
-- max summary size
+Create:
 
-Validation must be deterministic and lightweight.
+core/workflows/state.py
 
-==================================================
-MEMORY WORKER
-==================================================
+States:
 
-Create supervised MemoryWorker.
+PENDING
+RUNNING
+WAITING_CONFIRMATION
+FAILED
+RECOVERING
+COMPLETED
+CANCELLED
 
-Responsibilities:
-- subscribe MEMORY_WRITE_REQUEST
-- subscribe MEMORY_QUERY_REQUEST
-- validate entries
-- persist approved entries
-- handle recall queries
-- emit result events
+All typed.
+All deterministic.
 
-Worker MUST NEVER block:
-- audio transport
-- VAD
-- STT
-- orchestrator
-- TTS
-- executor
+4. Recovery Runtime
 
-Use bounded queues.
+Create:
 
-==================================================
-EVENT CONTRACTS
-==================================================
+core/workflows/recovery.py
 
-Add validated contracts for:
+Purpose:
+Recover from:
 
-MEMORY_WRITE_REQUEST
-MEMORY_WRITE_COMPLETED
-MEMORY_QUERY_REQUEST
-MEMORY_QUERY_RESULT
-MEMORY_DENIED
-MEMORY_FAILURE
-MEMORY_CONTEXT_READY
+failed tool calls
+timeout
+partial workflow completion
 
-==================================================
-RECALL SYSTEM
-==================================================
+Recovery rules:
 
-Deterministic ranking ONLY.
+retry max 2 times
+fallback tool allowed
+otherwise fail safely
+5. Tool Sequencing
 
-Ranking order:
-1. exact match
-2. recency
-3. confidence
+FRIDAY can now chain:
 
-NO embeddings.
-NO semantic search.
+Vision → OCR → Memory → Tool → Summary
 
-==================================================
-CONTEXT INJECTION
-==================================================
+Example:
 
-Memory subsystem may provide:
-- short preference summaries
-- pinned notes
-- recent summaries
+"Read this error on my screen and fix it."
 
-NEVER inject:
-- full transcripts
-- raw audio text dumps
-- giant history blobs
+Pipeline:
 
-Keep prompts compact.
+capture screen
+OCR extract
+summarize error
+search logs/files
+suggest fix
+6. Human Approval Layer
 
-==================================================
-RUNTIME SAFETY
-==================================================
+ANY dangerous workflow step:
 
-Requirements:
-- query timeout: 2s
-- bounded queues
-- cancellation safe
-- corrupted DB isolated
-- failed writes non-fatal
-- restart-safe worker behavior
+pauses execution
+requests confirmation
+resumes only after approval
 
-Memory subsystem may degrade independently while the rest of FRIDAY survives.
+No silent escalation.
 
-==================================================
-METRICS
-==================================================
+7. Long Task Continuity
 
-Add runtime metrics:
-- memories_stored
-- recall_queries
-- denied_memory_writes
-- memory_db_latency_ms
-- degraded_memory_mode
+Workflow survives:
 
-Expose metrics in dashboard.
+interruptions
+conversation switches
+temporary LLM failures
 
-==================================================
-TESTS
-==================================================
+State stored in:
 
-Create ONLY focused tests:
+core/workflows/store.py
 
-- validation rejection
-- successful persistence
-- deterministic recall ranking
-- timeout handling
-- corruption recovery
+Bounded history only.
 
-NO giant integration tests.
-NO fake enterprise testing framework.
+8. Workflow Dashboard
 
-==================================================
-CODE SIZE RULES
-==================================================
+Display:
 
-IMPORTANT:
-- Keep files small and readable
-- Prefer simple functions
-- Avoid deep inheritance
-- Avoid helper explosion
-- Avoid 300-line “fixes”
-- Target ~100–150 lines per file
-- If complexity grows:
-  REDESIGN SIMPLER
+active_workflow=debug_runtime
+step=3/5
+status=recovering
+tool=filesystem
+retries=1
+9. Prompt Planning Layer
 
-==================================================
-ARCHITECTURE PRINCIPLE
-==================================================
+Create:
 
-FRIDAY is:
-- runtime-first
-- deterministic-first
-- interruption-safe
-- degraded-mode capable
-- locally controlled
+core/workflows/prompt_planner.py
 
-The runtime decides truth.
-The LLM only suggests.
+Purpose:
+Generate:
+
+compact plans
+structured execution goals
+bounded reasoning context
+
+NO chain-of-thought exposure.
+
+10. Multi-Modal Workflowing
+
+FRIDAY can combine:
+
+speech
+vision
+memory
+tools
+reasoning
+
+inside one supervised workflow.
+
+HARD RULES
+NEVER:
+create recursive agents
+create self-improving systems
+allow autonomous shell execution
+allow unrestricted browsing
+allow autonomous persistence expansion
+allow hidden planning
+FILE LIMITS
+
+Each file:
+
+<180 lines
+
+No giant orchestrators.
+
+REQUIRED TESTS
+
+Create:
+
+tests/test_workflows.py
+
+Validate:
+
+bounded planning
+workflow cancellation
+retry recovery
+confirmation gates
+interruption safety
+persistence recovery
+timeout handling
+SUCCESS CONDITION
+
+FRIDAY should now:
+
+complete multi-step tasks
+recover from failures
+maintain workflow continuity
+coordinate tools intelligently
+remain safe and supervised
+
+WITHOUT becoming an uncontrolled autonomous agent.

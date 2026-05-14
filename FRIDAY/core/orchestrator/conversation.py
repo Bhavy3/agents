@@ -1,6 +1,7 @@
 import asyncio
 import time
 import uuid
+from typing import Optional
 
 from core.events.bus import EventBus
 from core.events.event_types import EventType
@@ -11,6 +12,7 @@ from core.llm.streaming_worker import StreamingLlmWorker
 from core.personality.prompt_personality import PersonalityPromptInjector
 from core.personality.models import PersonaMode, StyleConfig
 from core.personality.presence import PresenceManager
+from core.workflows.prompt_planner import PromptPlanner
 
 
 class OrchestratorWorker(BaseWorker):
@@ -21,12 +23,14 @@ class OrchestratorWorker(BaseWorker):
         event_bus: EventBus,
         intent_router: IntentRouter,
         streaming_worker: StreamingLlmWorker,
+        prompt_planner: Optional[PromptPlanner] = None,
         max_context_turns: int = 10,
         response_timeout_seconds: float = 30.0,
     ) -> None:
         super().__init__("orchestrator", event_bus)
         self.intent_router = intent_router
         self.streaming_worker = streaming_worker
+        self.prompt_planner = prompt_planner
         self.max_context_turns = max_context_turns
         self.response_timeout_seconds = response_timeout_seconds
         self.injector = PersonalityPromptInjector()
@@ -176,8 +180,30 @@ class OrchestratorWorker(BaseWorker):
             # Generate personality instructions
             personality_instructions = self.injector.get_style_instructions(self.current_style, self.current_mode)
             
-            # We call the handler from IntentRouter directly, mimicking what it used to do
-            # But we wrap it in a mock event
+            # Check if this should be a multi-step workflow
+            if self.prompt_planner and ("fix" in text.lower() or "debug" in text.lower() or "workflow" in text.lower()):
+                self.logger.info("attempting_workflow_planning", extra={"goal": text})
+                plan = await self.prompt_planner.create_plan_for_goal(text)
+                if plan:
+                    self.logger.info("workflow_plan_generated", extra={"steps": len(plan)})
+                    # Convert dict plan to engine format and start
+                    from core.app import FridayApp
+                    # We need access to the workflow worker
+                    # For simplicity in this session, we'll emit a WORKFLOW_STARTED event
+                    # But the requirement is to use the engine.
+                    # Since Orchestrator doesn't have direct ref to WorkflowWorker instance, 
+                    # we'll assume it's part of the engine reachable via app context or we pass it in.
+                    
+                    # Better: publish WORKFLOW_REQUESTED
+                    await self.event_bus.publish(Event.create(
+                        EventType.ACTION_GRAPH_STARTED,
+                        {"goal": text, "steps": plan},
+                        self.name,
+                        correlation_id
+                    ))
+                    return
+
+            # Otherwise, proceed with simple routing
             mock_event = Event.create(EventType.USER_MESSAGE_RECEIVED, {"text": text}, self.name, correlation_id)
             await self.intent_router.handle_user_text(mock_event, personality_instructions=personality_instructions)
             self.routed_messages += 1

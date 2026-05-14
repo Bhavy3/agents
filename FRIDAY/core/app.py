@@ -28,6 +28,8 @@ from core.vision.window_monitor import WindowMonitorWorker
 from core.vision.visual_context import VisualContextManager
 from core.validation.runtime_validator import RuntimeValidationReport, RuntimeValidator, ValidationCrashWorker
 from core.personality.personality_worker import PersonalityWorker
+from core.workflows.workflow_worker import WorkflowWorker
+from core.workflows.prompt_planner import PromptPlanner
 from core.workers.supervisor import WorkerSupervisor
 from interfaces.cli.health_dashboard import TerminalHealthDashboard
 from interfaces.cli.terminal_ui import TerminalUI
@@ -80,6 +82,8 @@ class FridayApp:
         self.visual_context = VisualContextManager(self.event_bus)
         self.visual_context.start()
         self.personality_worker = PersonalityWorker(self.event_bus)
+        self.workflow_worker = WorkflowWorker(self.event_bus)
+        self.prompt_planner = PromptPlanner(self.ollama_client)
         self.recovery_manager = RecoveryManager(self.event_bus)
         healthcheck_interval = max(1.0, min(30.0, self.settings.worker_heartbeat_timeout_seconds / 3))
         from core.audio.transport import AudioTransportWorker
@@ -92,6 +96,7 @@ class FridayApp:
             self.event_bus,
             self.intent_router,
             self.streaming_worker,
+            prompt_planner=self.prompt_planner,
         )
         
         tts_worker = TtsWorker(
@@ -111,6 +116,7 @@ class FridayApp:
                 tts_worker,
                 self.tool_worker,
                 self.personality_worker,
+                self.workflow_worker,
                 self.memory_worker,
                 self.screen_capture,
                 self.ocr_worker,

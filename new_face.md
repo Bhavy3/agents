@@ -1,219 +1,141 @@
-Phase 11.0 — Autonomous Workflow Intelligence
-Goal
+Before Phase 12, you should do the real-world coding spin first.
 
-Turn FRIDAY from:
+Because now the architecture is big enough that:
 
-Reactive Assistant
+synthetic tests pass
+but real usage reveals hidden async problems
 
-into:
+Right now FRIDAY has:
 
-Goal-Oriented Runtime
-
-WITHOUT creating:
-
-uncontrolled autonomy
-recursive agents
-self-prompt loops
-runaway planners
-
-This phase adds:
-
-bounded planning
-workflow execution
-recovery logic
-multi-step reasoning
-safe autonomous sequencing
-What Phase 11 Adds
-1. Workflow Engine
-
-Create:
-
-core/workflows/workflow_engine.py
-
-Purpose:
-Execute bounded multi-step tasks safely.
-
-Example:
-
-Workflow(
-    goal="debug supervisor issue",
-    steps=[
-        "open_logs",
-        "search_failures",
-        "summarize_root_cause",
-    ]
-)
-2. Planner (Bounded)
-
-Create:
-
-core/workflows/planner.py
-
-STRICT LIMITS:
-
-max 5 steps
-no recursion
-no self-replanning loops
-no autonomous internet exploration
-
-Planner only:
-
-decomposes tasks
-selects tools
-tracks progress
-3. Workflow State Machine
-
-Create:
-
-core/workflows/state.py
-
-States:
-
-PENDING
-RUNNING
-WAITING_CONFIRMATION
-FAILED
-RECOVERING
-COMPLETED
-CANCELLED
-
-All typed.
-All deterministic.
-
-4. Recovery Runtime
-
-Create:
-
-core/workflows/recovery.py
-
-Purpose:
-Recover from:
-
-failed tool calls
-timeout
-partial workflow completion
-
-Recovery rules:
-
-retry max 2 times
-fallback tool allowed
-otherwise fail safely
-5. Tool Sequencing
-
-FRIDAY can now chain:
-
-Vision → OCR → Memory → Tool → Summary
-
-Example:
-
-"Read this error on my screen and fix it."
-
-Pipeline:
-
-capture screen
-OCR extract
-summarize error
-search logs/files
-suggest fix
-6. Human Approval Layer
-
-ANY dangerous workflow step:
-
-pauses execution
-requests confirmation
-resumes only after approval
-
-No silent escalation.
-
-7. Long Task Continuity
-
-Workflow survives:
-
-interruptions
-conversation switches
-temporary LLM failures
-
-State stored in:
-
-core/workflows/store.py
-
-Bounded history only.
-
-8. Workflow Dashboard
-
-Display:
-
-active_workflow=debug_runtime
-step=3/5
-status=recovering
-tool=filesystem
-retries=1
-9. Prompt Planning Layer
-
-Create:
-
-core/workflows/prompt_planner.py
-
-Purpose:
-Generate:
-
-compact plans
-structured execution goals
-bounded reasoning context
-
-NO chain-of-thought exposure.
-
-10. Multi-Modal Workflowing
-
-FRIDAY can combine:
-
-speech
+audio
+VAD
+STT
+TTS
+workflows
 vision
 memory
-tools
-reasoning
+tooling
+orchestration
+interruption logic
+persistence
+personality
 
-inside one supervised workflow.
+That is already a serious runtime.
 
-HARD RULES
-NEVER:
-create recursive agents
-create self-improving systems
-allow autonomous shell execution
-allow unrestricted browsing
-allow autonomous persistence expansion
-allow hidden planning
-FILE LIMITS
+What To Do NOW
 
-Each file:
+Use FRIDAY naturally for:
 
-<180 lines
+2–5 hours
 
-No giant orchestrators.
+while:
 
-REQUIRED TESTS
+coding
+debugging
+opening apps
+interrupting speech
+switching windows
+running workflows
+forcing failures
+What You Are Looking For
+1. Interrupt Storms
 
-Create:
+Danger sign:
 
-tests/test_workflows.py
+conversation_interrupted spam
 
-Validate:
+Means:
 
-bounded planning
-workflow cancellation
-retry recovery
-confirmation gates
-interruption safety
-persistence recovery
-timeout handling
-SUCCESS CONDITION
+VAD too sensitive
+orchestration thrashing
+user breathing triggering interrupts
 
-FRIDAY should now:
+You already saw hints of this earlier.
 
-complete multi-step tasks
-recover from failures
-maintain workflow continuity
-coordinate tools intelligently
-remain safe and supervised
+Likely fix:
 
-WITHOUT becoming an uncontrolled autonomous agent.
+debounce interruption detection
+minimum speech confidence
+cooldown window
+2. Audio Backpressure
+
+Danger sign:
+
+buffer=50/50 permanently
+
+Means:
+
+downstream slower than audio input
+transport queue saturation
+
+That eventually causes:
+
+latency drift
+delayed responses
+stale STT
+3. Workflow Drift
+
+Watch for:
+
+workflow forgetting current step
+wrong resume state
+stale memory injection
+4. Memory Bloat
+
+Run for hours and monitor:
+
+RAM growth
+queue growth
+task count
+
+Most async systems die here.
+
+5. Personality Instability
+
+Watch for:
+
+overtalking
+repeating acknowledgments
+weird pacing
+emotional misclassification loops
+6. Tool Deadlocks
+
+Especially:
+
+confirmation waits
+filesystem scans
+browser launches
+
+Make sure:
+
+cancellation always works
+supervisor never hangs
+My Recommendation
+
+DO NOT rush into Phase 12 immediately.
+
+You are entering the stage where:
+
+runtime stability matters more than features
+
+This is where most AI assistant projects collapse.
+
+What Phase 12 Probably Becomes
+
+After stabilization, Phase 12 should likely be:
+
+Distributed Runtime & Device Integration
+
+Things like:
+
+phone integration
+remote agent nodes
+websocket runtime
+mobile streaming
+IoT/device control
+multi-device memory sync
+remote execution supervision
+
+NOT more cognition layers.
+
+Because your core assistant stack is already extremely advanced.

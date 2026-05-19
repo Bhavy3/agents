@@ -201,5 +201,20 @@ class TtsWorker(BaseWorker):
             self.logger.error("tts_playback_failed", extra={"error": str(e)})
 
     async def work(self) -> None:
-        self.heartbeat(f"tts [chunks={self.chunks_synthesized} interrupts={self.interruptions}]")
-        await asyncio.sleep(1.0)
+        try:
+            while not self.should_stop:
+                self.heartbeat(f"tts [chunks={self.chunks_synthesized} interrupts={self.interruptions} errors={self.synthesis_errors}]")
+                
+                # Watchdog: restart playback thread if it died unexpectedly
+                if self._playback_thread is not None and not self._playback_thread.is_alive() and not self.should_stop:
+                    if sd is not None:
+                        self.logger.warning("tts_playback_thread_dead_restarting")
+                        self._stop_playback.clear()
+                        self._playback_thread = threading.Thread(target=self._playback_loop, daemon=True)
+                        self._playback_thread.start()
+                
+                await asyncio.sleep(1.0)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._stop_playback.set()

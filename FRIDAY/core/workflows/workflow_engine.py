@@ -63,12 +63,27 @@ class WorkflowEngine:
 
         next_step.status = WorkflowStatus.RUNNING
         
+        # Resolve variables from previous step results
+        # Example: {{step_0_result}} or {{step_0_output}}
+        resolved_params = next_step.parameters.copy()
+        
+        def resolve_value(val: any) -> any:
+            if isinstance(val, str) and "{{" in val:
+                for i, s in enumerate(workflow.steps):
+                    if s.result is not None:
+                        val = val.replace(f"{{{{step_{i}_result}}}}", str(s.result))
+                        val = val.replace(f"{{{{step_{i}_output}}}}", str(s.result))
+            return val
+
+        for key, value in resolved_params.items():
+            resolved_params[key] = resolve_value(value)
+
         # Publish action request for the step
         await self.event_bus.publish(Event.create(
             EventType.ACTION_REQUESTED,
             {
                 "intent": next_step.intent,
-                "parameters": next_step.parameters
+                "parameters": resolved_params
             },
             "workflow_engine",
             correlation_id=next_step.id

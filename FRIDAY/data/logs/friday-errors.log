@@ -6936,3 +6936,529 @@
 {"timestamp": "2026-05-11T11:10:27.999634+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
 {"timestamp": "2026-05-11T11:10:31.476825+00:00", "level": "ERROR", "logger": "friday.workers.validation_crash_worker", "message": "Worker validation_crash_worker failed during run: simulated validation worker crash", "exception": "Traceback (most recent call last):\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\workers\\base_worker.py\", line 33, in run\n    await self.work()\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\validation\\runtime_validator.py\", line 25, in work\n    raise RuntimeError(\"simulated validation worker crash\")\nRuntimeError: simulated validation worker crash"}
 {"timestamp": "2026-05-11T11:10:31.481641+00:00", "level": "ERROR", "logger": "friday.workers.supervisor", "message": "worker_failed", "worker": "validation_crash_worker", "state": "failed", "restart_count": 8, "error": "simulated validation worker crash", "exception": "Traceback (most recent call last):\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\workers\\supervisor.py\", line 121, in _supervise\n    await worker_task\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\workers\\base_worker.py\", line 33, in run\n    await self.work()\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\validation\\runtime_validator.py\", line 25, in work\n    raise RuntimeError(\"simulated validation worker crash\")\nRuntimeError: simulated validation worker crash"}
+{"timestamp": "2026-05-13T10:30:55.278776+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:55.531113+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:55.776088+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:55.872299+00:00", "level": "ERROR", "logger": "friday.workers.validation_crash_worker", "message": "Worker validation_crash_worker failed during run: simulated validation worker crash", "exception": "Traceback (most recent call last):\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\workers\\base_worker.py\", line 33, in run\n    await self.work()\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\validation\\runtime_validator.py\", line 25, in work\n    raise RuntimeError(\"simulated validation worker crash\")\nRuntimeError: simulated validation worker crash"}
+{"timestamp": "2026-05-13T10:30:55.882117+00:00", "level": "ERROR", "logger": "friday.workers.supervisor", "message": "worker_failed", "worker": "validation_crash_worker", "state": "failed", "restart_count": 0, "error": "simulated validation worker crash", "exception": "Traceback (most recent call last):\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\workers\\supervisor.py\", line 121, in _supervise\n    await worker_task\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\workers\\base_worker.py\", line 33, in run\n    await self.work()\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\validation\\runtime_validator.py\", line 25, in work\n    raise RuntimeError(\"simulated validation worker crash\")\nRuntimeError: simulated validation worker crash"}
+{"timestamp": "2026-05-13T10:30:56.047206+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:56.302815+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:56.618111+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:56.886031+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:57.160371+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:57.332085+00:00", "level": "ERROR", "logger": "friday.workers.validation_crash_worker", "message": "Worker validation_crash_worker failed during run: simulated validation worker crash", "exception": "Traceback (most recent call last):\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\workers\\base_worker.py\", line 33, in run\n    await self.work()\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\validation\\runtime_validator.py\", line 25, in work\n    raise RuntimeError(\"simulated validation worker crash\")\nRuntimeError: simulated validation worker crash"}
+{"timestamp": "2026-05-13T10:30:57.340510+00:00", "level": "ERROR", "logger": "friday.workers.supervisor", "message": "worker_failed", "worker": "validation_crash_worker", "state": "failed", "restart_count": 1, "error": "simulated validation worker crash", "exception": "Traceback (most recent call last):\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\workers\\supervisor.py\", line 121, in _supervise\n    await worker_task\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\workers\\base_worker.py\", line 33, in run\n    await self.work()\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\validation\\runtime_validator.py\", line 25, in work\n    raise RuntimeError(\"simulated validation worker crash\")\nRuntimeError: simulated validation worker crash"}
+{"timestamp": "2026-05-13T10:30:57.394688+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:57.640377+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:57.907656+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:58.140825+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:58.397784+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:58.651161+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:58.890973+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:59.140667+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:59.385246+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:59.661340+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:30:59.787466+00:00", "level": "ERROR", "logger": "friday.workers.validation_crash_worker", "message": "Worker validation_crash_worker failed during run: simulated validation worker crash", "exception": "Traceback (most recent call last):\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\workers\\base_worker.py\", line 33, in run\n    await self.work()\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\validation\\runtime_validator.py\", line 25, in work\n    raise RuntimeError(\"simulated validation worker crash\")\nRuntimeError: simulated validation worker crash"}
+{"timestamp": "2026-05-13T10:30:59.792472+00:00", "level": "ERROR", "logger": "friday.workers.supervisor", "message": "worker_failed", "worker": "validation_crash_worker", "state": "failed", "restart_count": 2, "error": "simulated validation worker crash", "exception": "Traceback (most recent call last):\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\workers\\supervisor.py\", line 121, in _supervise\n    await worker_task\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\workers\\base_worker.py\", line 33, in run\n    await self.work()\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\validation\\runtime_validator.py\", line 25, in work\n    raise RuntimeError(\"simulated validation worker crash\")\nRuntimeError: simulated validation worker crash"}
+{"timestamp": "2026-05-13T10:30:59.899989+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:00.143182+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:00.392948+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:00.634071+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:00.886948+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:01.149656+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:01.390691+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:01.650302+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:01.893445+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:02.145408+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:02.391916+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:02.647432+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:02.884825+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.884825+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.884825+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.886863+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.887381+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.887381+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.887381+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.887381+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.890920+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.891950+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.892480+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.892480+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.892480+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.894514+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.895609+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.896132+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.896132+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.896132+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:02.896132+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_notice_dropped_queue_full", "reason": "invalid_event_object"}
+{"timestamp": "2026-05-13T10:31:02.949622+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:02.995228+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.046335+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.046335+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.046335+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.049361+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.051583+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.106497+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.140854+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:03.140854+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_notice_dropped_queue_full", "reason": "invalid_event_object"}
+{"timestamp": "2026-05-13T10:31:03.177114+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.230985+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.276766+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.335388+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.390601+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.392121+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:03.392121+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_notice_dropped_queue_full", "reason": "invalid_event_object"}
+{"timestamp": "2026-05-13T10:31:03.394652+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.395269+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.395801+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.396822+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.397822+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.397822+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.399402+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.399402+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.399402+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.401434+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.402467+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.402467+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.403996+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.403996+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.403996+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.403996+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.403996+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.403996+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.409269+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.410539+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.410539+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.411560+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.413051+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.413051+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.414574+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.415596+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.415596+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.416598+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.416598+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.418117+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.418117+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.419786+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.420802+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.420802+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.422321+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.423341+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.424327+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.424327+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.426153+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.426153+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.427168+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.427168+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.428685+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.429706+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.430707+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.431767+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.431767+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.431767+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.434549+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.435067+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.437144+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.496110+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.560132+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.623313+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.640775+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:03.640775+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_notice_dropped_queue_full", "reason": "invalid_event_object"}
+{"timestamp": "2026-05-13T10:31:03.679531+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.747750+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.802667+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.804190+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.805207+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.852705+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.885415+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:03.886042+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_notice_dropped_queue_full", "reason": "invalid_event_object"}
+{"timestamp": "2026-05-13T10:31:03.919855+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.951283+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.952737+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.952737+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.954257+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.954257+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.955260+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.956779+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.957793+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.957793+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.959308+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.959887+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.960907+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.960907+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.962412+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.962932+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.963952+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.965011+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.966541+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.968024+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.969044+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.970031+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.970031+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.971045+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.971045+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.973181+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.973524+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.975035+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.975035+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.975035+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.975035+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.978407+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.978941+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.980032+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.981053+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.981053+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.982557+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.982557+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.983574+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.985086+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.985590+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.986619+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.987140+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.988236+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.989230+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.989230+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.990735+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.990735+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.992261+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.993281+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.993281+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.995385+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.995909+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.995909+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:03.998465+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.070171+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.126205+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.147175+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:04.147175+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_notice_dropped_queue_full", "reason": "invalid_event_object"}
+{"timestamp": "2026-05-13T10:31:04.181706+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.184720+00:00", "level": "ERROR", "logger": "friday.workers.validation_crash_worker", "message": "Worker validation_crash_worker failed during run: simulated validation worker crash", "exception": "Traceback (most recent call last):\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\workers\\base_worker.py\", line 33, in run\n    await self.work()\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\validation\\runtime_validator.py\", line 25, in work\n    raise RuntimeError(\"simulated validation worker crash\")\nRuntimeError: simulated validation worker crash"}
+{"timestamp": "2026-05-13T10:31:04.187293+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.190790+00:00", "level": "ERROR", "logger": "friday.workers.supervisor", "message": "worker_failed", "worker": "validation_crash_worker", "state": "failed", "restart_count": 3, "error": "simulated validation worker crash", "exception": "Traceback (most recent call last):\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\workers\\supervisor.py\", line 121, in _supervise\n    await worker_task\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\workers\\base_worker.py\", line 33, in run\n    await self.work()\n  File \"C:\\Users\\IQ\\OneDrive\\Documents\\padas 1\\agents\\FRIDAY\\core\\validation\\runtime_validator.py\", line 25, in work\n    raise RuntimeError(\"simulated validation worker crash\")\nRuntimeError: simulated validation worker crash"}
+{"timestamp": "2026-05-13T10:31:04.191818+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.245797+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.315754+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.365234+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.403683+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:04.404843+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_notice_dropped_queue_full", "reason": "invalid_event_object"}
+{"timestamp": "2026-05-13T10:31:04.407834+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.452611+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.510309+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.512554+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.512554+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.514699+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.514699+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.515744+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.515744+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.517865+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.517865+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.517865+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.520900+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.521661+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.522631+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.522631+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.529748+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.529748+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.529748+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.531956+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.531956+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.531956+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.534497+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.536131+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.537249+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.537249+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.537249+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.537249+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.540884+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.540884+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.542565+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.543187+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.543187+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.545300+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.545832+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.545832+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.545832+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.545832+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.549461+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.550128+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.550516+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.552022+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.552541+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.553574+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.554095+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.554095+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.554095+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.556879+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.557886+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.557886+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.559418+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.559418+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.559418+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.619976+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.655473+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:04.656495+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_notice_dropped_queue_full", "reason": "invalid_event_object"}
+{"timestamp": "2026-05-13T10:31:04.685114+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.738751+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.806694+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.856707+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.918480+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:04.918480+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_notice_dropped_queue_full", "reason": "invalid_event_object"}
+{"timestamp": "2026-05-13T10:31:04.919496+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.951256+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.952789+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.954316+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.954316+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:04.985966+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.037317+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.070757+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.070757+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.072820+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.072820+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.072820+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.075411+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.075411+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.075411+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.075411+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.078807+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.079335+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.079335+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.079335+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.079335+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.081991+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.081991+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.081991+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.085070+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.085070+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.085070+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.087871+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.087871+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.087871+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.087871+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.090951+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.090951+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.092150+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.093155+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.093155+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.095261+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.095261+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.096273+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.097373+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.098253+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.099384+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.099963+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.099963+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.101524+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.102532+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.102532+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.104984+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.105789+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.106801+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.108612+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.109593+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.109593+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.112461+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.112977+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.114496+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.116567+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.117367+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.195975+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:05.195975+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_notice_dropped_queue_full", "reason": "invalid_event_object"}
+{"timestamp": "2026-05-13T10:31:05.195975+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.263854+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.322711+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.370585+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.432489+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.434495+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:05.435004+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_notice_dropped_queue_full", "reason": "invalid_event_object"}
+{"timestamp": "2026-05-13T10:31:05.484701+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.537516+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.602704+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.603725+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.605012+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.605012+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.606532+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.607816+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.607816+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.609331+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.609331+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.609331+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.611936+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.612966+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.613910+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.614924+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.614924+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.614924+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.614924+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.614924+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.618875+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.619865+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.619865+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.619865+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.622783+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.623411+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.623411+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.625425+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.627549+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.628644+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.628644+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.628644+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.628644+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.631912+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.632776+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.633783+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.634624+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.634624+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.634624+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.634624+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.638206+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.639221+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.639751+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.641278+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.641784+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.641784+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.641784+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.644849+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.645454+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.645966+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.646693+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.648262+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.649282+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.663019+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.697324+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:05.697324+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_notice_dropped_queue_full", "reason": "invalid_event_object"}
+{"timestamp": "2026-05-13T10:31:05.697324+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.758133+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.821480+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.877101+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.906847+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.907845+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.909418+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.932429+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:05.933449+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:05.933449+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_notice_dropped_queue_full", "reason": "invalid_event_object"}
+{"timestamp": "2026-05-13T10:31:05.989064+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.046836+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.099336+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.158320+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.159332+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.160378+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.160850+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.160850+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.162518+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.164049+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.164049+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.165080+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.166612+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.167517+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.168042+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.169064+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.169064+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.170059+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.171065+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.172674+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.172674+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.173694+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.173694+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.175209+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.176736+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.176736+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.177749+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.179260+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.180262+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.180262+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.181407+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.182057+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.183064+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.183064+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.184572+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.185578+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.186585+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.187089+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.188094+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.189345+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.189884+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.191422+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.191935+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.191935+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.191935+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.194497+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.195530+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.196092+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.197618+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.197618+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.199143+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.199143+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.201169+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.202201+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.202712+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:06.202712+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_notice_dropped_queue_full", "reason": "invalid_event_object"}
+{"timestamp": "2026-05-13T10:31:06.204230+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.267800+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.320260+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.379233+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.441966+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.441966+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:06.441966+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_notice_dropped_queue_full", "reason": "invalid_event_object"}
+{"timestamp": "2026-05-13T10:31:06.494730+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.547424+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.613834+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.655547+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.691404+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_dropped", "reason": "invalid_event_object", "event_class": "str"}
+{"timestamp": "2026-05-13T10:31:06.691933+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "malformed_event_notice_dropped_queue_full", "reason": "invalid_event_object"}
+{"timestamp": "2026-05-13T10:31:06.692948+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.692948+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.693953+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.695292+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.696184+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.696184+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.696184+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.696184+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.699290+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.699290+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.701311+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.702161+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.702670+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.703679+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.703679+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.704710+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.705712+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.706711+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.707709+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.707709+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.709237+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.710248+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.711244+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.711825+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.712861+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.712861+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.713869+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.715151+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.716154+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.717796+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.717796+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.718806+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.719809+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.719809+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.721317+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.722327+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.723554+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.724138+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.725147+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.725147+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.726816+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.727826+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.728826+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.728826+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.730355+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.731997+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.731997+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.731997+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.734543+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.734543+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.734543+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.787017+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.852526+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.852912+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.854983+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.856641+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}
+{"timestamp": "2026-05-13T10:31:06.857632+00:00", "level": "ERROR", "logger": "friday.events.bus", "message": "backpressure_notice_dropped_queue_full"}

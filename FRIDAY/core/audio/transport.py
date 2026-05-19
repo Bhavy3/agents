@@ -43,6 +43,7 @@ class AudioTransportWorker(BaseWorker):
         self._start_time = 0.0
         self._total_chunks = 0
         self._loop = asyncio.get_event_loop()
+        self._last_overflow_log = 0.0
 
     async def _start_audio(self) -> bool:
         """Start the audio stream safely."""
@@ -157,19 +158,27 @@ class AudioTransportWorker(BaseWorker):
                     self._emit_error("input_overflow", None)
                 )
 
+        # Strategic Drop: If local buffer is full, pop the oldest
         if len(self._buffer) >= self.max_buffer_chunks:
             self._buffer.popleft()
-            self._loop.call_soon_threadsafe(
-                asyncio.create_task,
-                self.event_bus.publish(
-                    Event.create(
-                        EventType.AUDIO_BUFFER_OVERFLOW,
-                        {"dropped_chunks": 1, "reason": "queue_full"},
-                        "audio_transport",
-                        priority=EventPriority.CRITICAL,
+            if now - self._last_overflow_log > 1.0: # Throttle overflow events
+                self._last_overflow_log = now
+                self._loop.call_soon_threadsafe(
+                    asyncio.create_task,
+                    self.event_bus.publish(
+                        Event.create(
+                            EventType.AUDIO_BUFFER_OVERFLOW,
+                            {"dropped_chunks": 1, "reason": "local_buffer_full"},
+                            "audio_transport",
+                            priority=EventPriority.HIGH,
+                        )
                     )
                 )
-            )
+
+        # Global Backpressure Check: Drop if EventBus is saturated
+        if self.event_bus.queue_utilization > 0.9:
+             # Just drop this chunk to prevent bus flooding
+             return
 
         chunk_copy = indata.copy()
         self._buffer.append(chunk_copy)

@@ -18,13 +18,18 @@ class VadWorker(BaseWorker):
         min_speech_duration: float = 0.5,
         max_speech_duration: float = 30.0,
         speech_inactivity_timeout: float = 1.5,
+        activation_chunks: int = 3, # Need this many speech chunks to start
+        cooldown_seconds: float = 0.8, # Wait before starting new segment
     ) -> None:
         super().__init__("vad", event_bus)
         self.silence_threshold = silence_threshold
         self.min_speech_duration = min_speech_duration
         self.max_speech_duration = max_speech_duration
         self.speech_inactivity_timeout = speech_inactivity_timeout
+        self.activation_chunks = activation_chunks
+        self.cooldown_seconds = cooldown_seconds
 
+    
         self._lock = asyncio.Lock()
         self._is_speaking = False
         self._speech_start_time = 0.0
@@ -32,6 +37,11 @@ class VadWorker(BaseWorker):
         self._current_segment_chunks: list[bytes] = []
         self._current_segment_id: str | None = None
         self._max_amplitude = 0.0
+        
+        # Debouncing
+        self._speech_chunk_counter = 0
+        self._cooldown_until = 0.0
+        self._pre_speech_buffer: list[bytes] = [] # To avoid losing first chunks during activation
         
         # Stats
         self.segments_produced = 0
@@ -48,38 +58,52 @@ class VadWorker(BaseWorker):
         data = event.payload.get("data", b"")
 
         async with self._lock:
+            now = timestamp
+            if now < self._cooldown_until:
+                return
+
             if amplitude > self.silence_threshold:
                 if not self._is_speaking:
-                    self._is_speaking = True
-                    self._speech_start_time = timestamp
-                    self._last_speech_time = timestamp
-                    self._current_segment_id = str(uuid.uuid4())[:8]
-                    self._current_segment_chunks = [data]
-                    self._max_amplitude = amplitude
+                    self._speech_chunk_counter += 1
+                    self._pre_speech_buffer.append(data)
                     
-                    await self.event_bus.publish(
-                        Event.create(
-                            EventType.SPEECH_STARTED,
-                            {"timestamp": timestamp, "amplitude": amplitude},
-                            self.name
+                    if self._speech_chunk_counter >= self.activation_chunks:
+                        self._is_speaking = True
+                        self._speech_start_time = now - (self.activation_chunks * 0.05) # Backdate slightly
+                        self._last_speech_time = now
+                        self._current_segment_id = str(uuid.uuid4())[:8]
+                        self._current_segment_chunks = list(self._pre_speech_buffer)
+                        self._max_amplitude = amplitude
+                        self._pre_speech_buffer.clear()
+                        
+                        await self.event_bus.publish(
+                            Event.create(
+                                EventType.SPEECH_STARTED,
+                                {"timestamp": now, "amplitude": amplitude, "segment_id": self._current_segment_id},
+                                self.name
+                            )
                         )
-                    )
                 else:
-                    self._last_speech_time = timestamp
+                    self._last_speech_time = now
                     self._current_segment_chunks.append(data)
                     self._max_amplitude = max(self._max_amplitude, amplitude)
             else:
-                if self._is_speaking:
+                if not self._is_speaking:
+                    self._speech_chunk_counter = max(0, self._speech_chunk_counter - 1)
+                    if self._pre_speech_buffer:
+                        self._pre_speech_buffer.pop(0) if len(self._pre_speech_buffer) > 5 else None
+                else:
                     self._current_segment_chunks.append(data)
                     
-                    if timestamp - self._last_speech_time > self.speech_inactivity_timeout:
-                        await self._finalize_segment(timestamp, "inactivity")
+                    if now - self._last_speech_time > self.speech_inactivity_timeout:
+                        await self._finalize_segment(now, "inactivity")
 
     async def _finalize_segment(self, end_timestamp: float, reason: str) -> None:
         """Must be called with lock held."""
         if not self._is_speaking:
             return
 
+        self._cooldown_until = end_timestamp + self.cooldown_seconds
         duration = end_timestamp - self._speech_start_time
         
         if duration < self.min_speech_duration:
@@ -124,6 +148,8 @@ class VadWorker(BaseWorker):
         self._current_segment_chunks.clear()
         self._current_segment_id = None
         self._max_amplitude = 0.0
+        self._speech_chunk_counter = 0
+        self._pre_speech_buffer.clear()
 
     async def work(self) -> None:
         try:

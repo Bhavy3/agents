@@ -26,6 +26,7 @@ class OrchestratorWorker(BaseWorker):
         prompt_planner: Optional[PromptPlanner] = None,
         max_context_turns: int = 10,
         response_timeout_seconds: float = 30.0,
+        interrupt_cooldown_seconds: float = 1.5,
     ) -> None:
         super().__init__("orchestrator", event_bus)
         self.intent_router = intent_router
@@ -33,6 +34,7 @@ class OrchestratorWorker(BaseWorker):
         self.prompt_planner = prompt_planner
         self.max_context_turns = max_context_turns
         self.response_timeout_seconds = response_timeout_seconds
+        self.interrupt_cooldown_seconds = interrupt_cooldown_seconds
         self.injector = PersonalityPromptInjector()
         self.presence = PresenceManager()
         
@@ -43,6 +45,10 @@ class OrchestratorWorker(BaseWorker):
         self.context: list[dict[str, str]] = []
         self._routing_task: asyncio.Task | None = None
         self._last_activity_time = time.perf_counter()
+        
+        # Interrupt storm protection
+        self._interrupt_cooldown_until = 0.0
+        self.interrupt_cooldown_seconds = 1.5
 
         # Stats
         self.active_conversations = 0
@@ -71,9 +77,15 @@ class OrchestratorWorker(BaseWorker):
 
     async def _handle_speech_started(self, event: Event) -> None:
         """User started speaking. Interrupt any active assistant response."""
-        self._last_activity_time = time.perf_counter()
+        now = time.perf_counter()
+        self._last_activity_time = now
+        
+        # Interrupt storm debounce
+        if now < self._interrupt_cooldown_until:
+            return
         
         if self.active_speaker == "assistant" or self._routing_task is not None:
+            self._interrupt_cooldown_until = now + self.interrupt_cooldown_seconds
             self.interruptions += 1
             self.logger.info("conversation_interrupted", extra={"turn_id": self.active_turn_id})
             

@@ -87,5 +87,133 @@
         "retry_count": 0
       }
     ]
+  },
+  "747e0dd9": {
+    "goal": "retry test",
+    "status": "pending",
+    "created_at": 1778667700.9682927,
+    "steps": [
+      {
+        "id": "747e0dd9_0",
+        "intent": "flaky_tool",
+        "parameters": {},
+        "status": "pending",
+        "result": null,
+        "error": null,
+        "retry_count": 0
+      }
+    ]
+  },
+  "0af6dcb6": {
+    "goal": "retry test",
+    "status": "pending",
+    "created_at": 1778667743.9227886,
+    "steps": [
+      {
+        "id": "0af6dcb6_0",
+        "intent": "flaky_tool",
+        "parameters": {},
+        "status": "pending",
+        "result": null,
+        "error": null,
+        "retry_count": 0
+      }
+    ]
+  },
+  "42905422": {
+    "goal": "retry test",
+    "status": "pending",
+    "created_at": 1778668236.4908788,
+    "steps": [
+      {
+        "id": "42905422_0",
+        "intent": "flaky_tool",
+        "parameters": {},
+        "status": "pending",
+        "result": null,
+        "error": null,
+        "retry_count": 0
+      }
+    ]
+  },
+  "4a3946e2": {
+    "goal": "retry test",
+    "status": "pending",
+    "created_at": 1778668286.3147125,
+    "steps": [
+      {
+        "id": "4a3946e2_0",
+        "intent": "flaky_tool",
+        "parameters": {},
+        "status": "pending",
+        "result": null,
+        "error": null,
+        "retry_count": 0
+      }
+    ]
+  },
+  "011493f8": {
+    "goal": "retry test",
+    "status": "pending",
+    "created_at": 1778674290.682736,
+    "steps": [
+      {
+        "id": "011493f8_0",
+        "intent": "flaky_tool",
+        "parameters": {},
+        "status": "pending",
+        "result": null,
+        "error": null,
+        "retry_count": 0
+      }
+    ]
+  },
+  "f9d3639b": {
+    "goal": "retry test",
+    "status": "pending",
+    "created_at": 1778674360.6387365,
+    "steps": [
+      {
+        "id": "f9d3639b_0",
+        "intent": "flaky_tool",
+        "parameters": {},
+        "status": "pending",
+        "result": null,
+        "error": null,
+        "retry_count": 0
+      }
+    ]
+  },
+  "61ada44e": {
+    "goal": "retry test",
+    "status": "pending",
+    "created_at": 1778734510.9457664,
+    "steps": [
+      {
+        "id": "61ada44e_0",
+        "intent": "flaky_tool",
+        "parameters": {},
+        "status": "pending",
+        "result": null,
+        "error": null,
+        "retry_count": 0
+      }
+    ]
+  },
+  "55cbc1ab": {
+    "goal": "retry test",
+    "status": "pending",
+    "created_at": 1778734633.2881527,
+    "steps": [
+      {
+        "id": "55cbc1ab_0",
+        "intent": "flaky_tool",
+        "parameters": {},
+        "status": "pending",
+        "result": null,
+        "error": null,
+        "retry_count": 0
+      }
+    ]
   }
 }

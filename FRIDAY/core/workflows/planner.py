@@ -10,12 +10,13 @@ STRICT RULES:
 1. Max 5 steps.
 2. No recursion or self-replanning.
 3. Use only available tools: open_chrome, open_folder, search_google, read_file, write_file, launch_app.
-4. Output ONLY a JSON list of steps.
+4. You can reference previous step results using "{{step_N_result}}" where N is the zero-based step index.
+5. Output ONLY a JSON list of steps.
 
 Format:
 [
   {"intent": "tool_name", "parameters": {"param": "value"}},
-  ...
+  {"intent": "another_tool", "parameters": {"input": "{{step_0_result}}"}}
 ]"""
 
 

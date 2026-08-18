@@ -1,4 +1,5 @@
 import asyncio
+import queue
 import time
 import numpy as np
 from collections import deque
@@ -18,7 +19,12 @@ except Exception:
 
 
 class AudioTransportWorker(BaseWorker):
-    """Isolated audio hardware transport layer."""
+    """Isolated audio hardware transport layer.
+
+    The sounddevice callback runs on an OS thread.  We push raw chunk data
+    into a ``queue.Queue`` (thread-safe) and drain it from the asyncio
+    event loop in ``work()``, keeping Event construction on the loop thread.
+    """
 
     def __init__(
         self,
@@ -36,14 +42,15 @@ class AudioTransportWorker(BaseWorker):
         self.max_buffer_chunks = max_buffer_chunks
         self.inactivity_timeout_seconds = inactivity_timeout_seconds
 
-        self._stream: sd.InputStream | None = None
+        self._stream: Any = None
         self._buffer: deque[np.ndarray] = deque(maxlen=max_buffer_chunks)
         self._is_running = False
         self._last_chunk_time = 0.0
         self._start_time = 0.0
         self._total_chunks = 0
-        self._loop = asyncio.get_event_loop()
         self._last_overflow_log = 0.0
+        # Thread-safe queue: OS audio thread → asyncio event loop
+        self._chunk_queue: queue.Queue[tuple[np.ndarray, int, float]] = queue.Queue(maxsize=max_buffer_chunks * 2)
 
     async def _start_audio(self) -> bool:
         """Start the audio stream safely."""
@@ -119,16 +126,49 @@ class AudioTransportWorker(BaseWorker):
         self.logger.info("audio_transport_stopped", extra={"reason": reason})
 
     async def work(self) -> None:
-        """Background task checking for timeouts and keeping worker alive."""
+        """Background task: drain the thread-safe queue, publish events, check timeouts."""
         if not await self._start_audio():
             return
             
         try:
             while not self.should_stop:
                 self.heartbeat(f"audio_streaming [buffer={len(self._buffer)}/{self.max_buffer_chunks} chunks={self._total_chunks}]")
-                await asyncio.sleep(0.1)
+
+                # Drain all available chunks from the thread-safe queue
+                drained = 0
+                while drained < self.max_buffer_chunks:
+                    try:
+                        chunk_copy, frames, timestamp = self._chunk_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                    drained += 1
+                    self._buffer.append(chunk_copy)
+                    self._last_chunk_time = timestamp
+                    self._total_chunks += 1
+                    amplitude = float(np.max(np.abs(chunk_copy)))
+
+                    # Backpressure: skip publishing if EventBus is saturated
+                    if self.event_bus.queue_utilization > 0.9:
+                        continue
+
+                    await self.event_bus.publish(
+                        Event.create(
+                            EventType.AUDIO_CHUNK_RECEIVED,
+                            {
+                                "chunk_size": frames,
+                                "timestamp": timestamp,
+                                "amplitude": amplitude,
+                                "data": chunk_copy.tobytes(),
+                            },
+                            "audio_transport",
+                        )
+                    )
+
+                await asyncio.sleep(0.05)  # ~20 Hz drain cycle
+
+                # Inactivity timeout
                 now = time.perf_counter()
-                if now - self._last_chunk_time > self.inactivity_timeout_seconds:
+                if self._last_chunk_time > 0 and now - self._last_chunk_time > self.inactivity_timeout_seconds:
                     self.logger.warning("audio_transport_timeout")
                     await self.event_bus.publish(
                         Event.create(
@@ -144,64 +184,30 @@ class AudioTransportWorker(BaseWorker):
         finally:
             await self._stop_audio(reason="interrupted" if self.should_stop else "finished")
 
-    def _audio_callback(self, indata: np.ndarray, frames: int, time_info: Any, status: sd.CallbackFlags) -> None:
-        """Called by sounddevice thread. Must NOT block."""
+    def _audio_callback(self, indata: np.ndarray, frames: int, time_info: Any, status: Any) -> None:
+        """Called by sounddevice OS thread. Must NOT block.
+
+        Only touches the thread-safe ``_chunk_queue`` — no Event construction,
+        no asyncio calls, no datetime/uuid operations on this thread.
+        """
         if not self._is_running:
             return
 
-        now = time.perf_counter()
-        
-        if status:
-            if status.input_overflow:
-                self._loop.call_soon_threadsafe(
-                    asyncio.create_task,
-                    self._emit_error("input_overflow", None)
-                )
-
-        # Strategic Drop: If local buffer is full, pop the oldest
-        if len(self._buffer) >= self.max_buffer_chunks:
-            self._buffer.popleft()
-            if now - self._last_overflow_log > 1.0: # Throttle overflow events
-                self._last_overflow_log = now
-                self._loop.call_soon_threadsafe(
-                    asyncio.create_task,
-                    self.event_bus.publish(
-                        Event.create(
-                            EventType.AUDIO_BUFFER_OVERFLOW,
-                            {"dropped_chunks": 1, "reason": "local_buffer_full"},
-                            "audio_transport",
-                            priority=EventPriority.HIGH,
-                        )
-                    )
-                )
-
-        # Global Backpressure Check: Drop if EventBus is saturated
-        if self.event_bus.queue_utilization > 0.9:
-             # Just drop this chunk to prevent bus flooding
-             return
-
         chunk_copy = indata.copy()
-        self._buffer.append(chunk_copy)
-        self._last_chunk_time = now
-        self._total_chunks += 1
-        
-        amplitude = float(np.max(np.abs(chunk_copy)))
+        timestamp = time.perf_counter()
 
-        self._loop.call_soon_threadsafe(
-            asyncio.create_task,
-            self.event_bus.publish(
-                Event.create(
-                    EventType.AUDIO_CHUNK_RECEIVED,
-                    {
-                        "chunk_size": frames,
-                        "timestamp": now,
-                        "amplitude": amplitude,
-                        "data": chunk_copy.tobytes(),
-                    },
-                    "audio_transport",
-                )
-            )
-        )
+        try:
+            self._chunk_queue.put_nowait((chunk_copy, frames, timestamp))
+        except queue.Full:
+            # Drop oldest if queue is full — bounded, won't grow
+            try:
+                self._chunk_queue.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self._chunk_queue.put_nowait((chunk_copy, frames, timestamp))
+            except queue.Full:
+                pass
 
     async def _emit_error(self, error: str, device_id: Any) -> None:
         await self.event_bus.publish(
@@ -216,3 +222,4 @@ class AudioTransportWorker(BaseWorker):
         chunks = list(self._buffer)
         self._buffer.clear()
         return chunks
+

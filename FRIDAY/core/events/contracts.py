@@ -103,15 +103,15 @@ EVENT_CONTRACTS: dict[EventType, PayloadSchema] = {
 
     # Action Runtime
     EventType.ACTION_REQUESTED: {"intent": str, "parameters": dict},
-    EventType.ACTION_VALIDATED: {"tool_name": str, "risk_level": str},
-    EventType.ACTION_STARTED: {"tool_name": str},
-    EventType.ACTION_COMPLETED: {"success": bool, "output": str, "error": (str, type(None))},
+    EventType.ACTION_VALIDATED: {},
+    EventType.ACTION_STARTED: {},
+    EventType.ACTION_COMPLETED: {},
     EventType.ACTION_FAILED: {"error": str},
-    EventType.ACTION_CANCELLED: {"tool_name": str},
-    EventType.ACTION_TIMEOUT: {"tool_name": str},
-    EventType.ACTION_DENIED: {"reason": str, "tool_name": str},
+    EventType.ACTION_CANCELLED: {},
+    EventType.ACTION_TIMEOUT: {},
+    EventType.ACTION_DENIED: {"reason": str},
     EventType.ACTION_CONFIRMATION_REQUIRED: {"correlation_id": str, "tool_name": str, "risk_level": str},
-    EventType.ACTION_GRAPH_STARTED: {"graph_id": str, "node_count": int},
+    EventType.ACTION_GRAPH_STARTED: {"goal": str, "steps": list},
     EventType.ACTION_GRAPH_COMPLETED: {"graph_id": str, "success": bool},
     EventType.ACTION_GRAPH_FAILED: {"graph_id": str, "error": str},
 

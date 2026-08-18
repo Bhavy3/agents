@@ -33,6 +33,7 @@ class EventBus:
     _wildcard_subscribers: list[EventHandler] = field(default_factory=list)
     _dispatcher_task: asyncio.Task[None] | None = None
     _running: bool = False
+    _publishing_notification: bool = False
     _logger: logging.Logger = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -214,21 +215,27 @@ class EventBus:
         )
         if event.event_type == EventType.BACKPRESSURE_APPLIED:
             return
-        backpressure_event = Event.create(
-            EventType.BACKPRESSURE_APPLIED,
-            {
-                "dropped_event_id": event.event_id,
-                "dropped_event_type": event.event_type.value,
-                "queue_depth": self._queue.qsize(),
-                "queue_utilization": self.queue_utilization,
-            },
-            "event_bus",
-            priority=EventPriority.CRITICAL,
-        )
+        # Re-entrancy guard: don't recursively enqueue notifications
+        if self._publishing_notification:
+            return
+        self._publishing_notification = True
         try:
+            backpressure_event = Event.create(
+                EventType.BACKPRESSURE_APPLIED,
+                {
+                    "dropped_event_id": event.event_id,
+                    "dropped_event_type": event.event_type.value,
+                    "queue_depth": self._queue.qsize(),
+                    "queue_utilization": self.queue_utilization,
+                },
+                "event_bus",
+                priority=EventPriority.CRITICAL,
+            )
             self._queue.put_nowait(backpressure_event)
         except asyncio.QueueFull:
             self._logger.error("backpressure_notice_dropped_queue_full")
+        finally:
+            self._publishing_notification = False
 
     def _validate_event_boundary(self, candidate: object) -> bool:
         from core.events.contracts import validate_event_payload
@@ -293,16 +300,23 @@ class EventBus:
             "malformed_event_dropped",
             extra={"reason": reason, **details},
         )
-        malformed_event = Event.create(
-            EventType.MALFORMED_EVENT_DROPPED,
-            {"reason": reason, "details": details},
-            "event_bus",
-            priority=EventPriority.CRITICAL,
-        )
+        # Re-entrancy guard: if we're already publishing a notification event,
+        # don't enqueue another one — that creates an infinite cascade.
+        if self._publishing_notification:
+            return
+        self._publishing_notification = True
         try:
+            malformed_event = Event.create(
+                EventType.MALFORMED_EVENT_DROPPED,
+                {"reason": reason, "details": details},
+                "event_bus",
+                priority=EventPriority.CRITICAL,
+            )
             self._queue.put_nowait(malformed_event)
         except asyncio.QueueFull:
             self._logger.error(
                 "malformed_event_notice_dropped_queue_full",
                 extra={"reason": reason},
             )
+        finally:
+            self._publishing_notification = False

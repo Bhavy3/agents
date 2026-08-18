@@ -11,7 +11,6 @@ from core.events.bus import EventBus
 from core.events.event_types import EventType
 from core.events.models import Event
 from core.tools.tool_worker import ToolWorker
-from core.executor.command_registry import CommandRegistry
 from core.logging.logger import configure_logging, get_logger, shutdown_logging
 from core.llm.ollama_client import OllamaClient
 from core.llm.stream_aggregator import ResponseAggregator
@@ -33,16 +32,17 @@ from core.workflows.prompt_planner import PromptPlanner
 from core.workers.supervisor import WorkerSupervisor
 from interfaces.cli.health_dashboard import TerminalHealthDashboard
 from interfaces.cli.terminal_ui import TerminalUI
-from plugins.browser.plugin import register as register_browser
-from plugins.chrome.plugin import register as register_chrome
-from plugins.files.plugin import register as register_files
-from plugins.system.plugin import register as register_system
 
 
 class FridayApp:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or load_settings()
-        configure_logging(self.settings.log_dir, level=self.settings.log_level, json_logging=self.settings.json_logging)
+        configure_logging(
+            self.settings.log_dir,
+            level=self.settings.log_level,
+            json_logging=self.settings.json_logging,
+            console_level=self.settings.console_log_level,
+        )
         self.logger = get_logger("app")
         from core.metrics.metrics import RuntimeMetrics
 
@@ -54,27 +54,30 @@ class FridayApp:
             event_max_age_seconds=self.settings.event_max_age_seconds,
             handler_timeout_seconds=self.settings.event_handler_timeout_seconds,
         )
-        self.command_registry = CommandRegistry()
         self.command_history = CommandHistory()
         
-        self.ollama_client = OllamaClient(
+        from core.llm.local_llm_client import create_llm_client
+        self.ollama_client = create_llm_client(
             base_url=self.settings.ollama_base_url,
             model=self.settings.ollama_model,
             timeout_seconds=self.settings.ollama_timeout_seconds,
             max_retries=self.settings.ollama_max_retries,
+            provider=self.settings.llm_provider,
         )
         self.stream_aggregator = ResponseAggregator(self.event_bus, metrics=self.metrics)
         self.streaming_worker = StreamingLlmWorker(
             self.event_bus, self.ollama_client, self.stream_aggregator
         )
+        self.tool_worker = ToolWorker(self.event_bus, metrics=self.metrics)
+        valid_tools = self.tool_worker.registry.list_tools()
         self.llm_fallback = LlmFallbackRouter(
             ollama_client=self.ollama_client,
             command_history=self.command_history,
             event_bus=self.event_bus,
             streaming_worker=self.streaming_worker,
+            valid_tools=valid_tools,
         )
         self.intent_router = IntentRouter(self.event_bus, llm_fallback=self.llm_fallback)
-        self.tool_worker = ToolWorker(self.event_bus, metrics=self.metrics)
         self.memory_worker = MemoryWorker(self.event_bus, metrics=self.metrics)
         self.screen_capture = ScreenCaptureWorker(self.event_bus, metrics=self.metrics)
         self.ocr_worker = OCRWorker(self.event_bus, metrics=self.metrics)
@@ -97,6 +100,7 @@ class FridayApp:
             self.intent_router,
             self.streaming_worker,
             prompt_planner=self.prompt_planner,
+            response_timeout_seconds=self.settings.ollama_timeout_seconds,
         )
         
         tts_worker = TtsWorker(
@@ -177,7 +181,6 @@ class FridayApp:
         if not ollama_available:
             self.logger.warning("ollama_unavailable_at_startup", extra={"model": self.ollama_client.model})
         
-        await self._register_plugins()
         self.event_bus.subscribe(EventType.SYSTEM_SHUTDOWN_REQUESTED, self._handle_shutdown)
         await self.intent_router.start()
         await self.recovery_manager.start()
@@ -207,36 +210,10 @@ class FridayApp:
     async def _perform_shutdown(self) -> None:
         await self.terminal_ui.stop()
         await self.supervisor.stop()
+        await self.ollama_client.aclose()
         await self.event_bus.publish(Event.create(EventType.SYSTEM_STOPPED, {}, "app"))
         await self.event_bus.drain()
         await self.event_bus.stop()
-
-    async def _register_plugins(self) -> None:
-        plugin_registrars: list[Callable[[CommandRegistry], None]] = [
-            register_chrome,
-            register_files,
-            register_browser,
-            register_system,
-        ]
-        for registrar in plugin_registrars:
-            try:
-                registrar(self.command_registry)
-            except Exception as exc:
-                self.logger.exception(
-                    "plugin_registration_failed",
-                    extra={"plugin": registrar.__module__},
-                )
-                await self.event_bus.publish(
-                    Event.create(
-                        EventType.ERROR_OCCURRED,
-                        {
-                            "component": "plugin_registration",
-                            "plugin": registrar.__module__,
-                            "error": str(exc),
-                        },
-                        "app",
-                    )
-                )
 
     async def _handle_shutdown(self, _: Event) -> None:
         self._shutdown_event.set()
@@ -245,3 +222,4 @@ class FridayApp:
 async def run_app() -> None:
     app = FridayApp()
     await app.run()
+

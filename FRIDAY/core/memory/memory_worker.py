@@ -32,7 +32,7 @@ class MemoryWorker(BaseWorker):
         await super().run()
 
     async def work(self) -> None:
-        context_refresh_timer = 0
+        context_refresh_timer = 30 # Fire immediately on startup
         while not self.should_stop:
             self.heartbeat(f"memory [stored={self._memories_stored} queries={self._recall_queries} denied={self._denied_writes}]")
             

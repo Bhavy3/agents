@@ -15,7 +15,7 @@ from core.workers.base_worker import BaseWorker
 from core.logging.logger import get_logger
 
 try:
-    from piper.voice import PiperVoice
+    from piper.voice import PiperVoice  # type: ignore
 except ImportError:
     PiperVoice = None
 

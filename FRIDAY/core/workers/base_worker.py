@@ -38,9 +38,13 @@ class BaseWorker(ABC):
         finally:
             if self.health.state not in {WorkerState.FAILED, WorkerState.QUARANTINED, WorkerState.DISABLED}:
                 self.health.mark_stopped()
-            await self.event_bus.publish(
-                Event.create(EventType.WORKER_STOPPED, {"worker": self.name}, self.name)
-            )
+            if getattr(self.event_bus, "_running", False):
+                try:
+                    await self.event_bus.publish(
+                        Event.create(EventType.WORKER_STOPPED, {"worker": self.name}, self.name)
+                    )
+                except Exception:
+                    pass
 
     async def stop(self) -> None:
         self._stop_event.set()

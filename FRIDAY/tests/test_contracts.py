@@ -4,9 +4,7 @@ from core.events.bus import EventBus
 from core.events.event_types import EventType
 from core.events.models import Event, EventState
 from core.exceptions import ValidationError
-from core.executor.executor import CommandExecutor
-from core.executor.command_registry import CommandRegistry
-from core.executor.dry_run_actions import ExecutorResult
+
 
 @pytest.mark.asyncio
 async def test_invalid_event_payload_rejected():

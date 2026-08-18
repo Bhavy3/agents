@@ -55,6 +55,12 @@ class ToolWorker(BaseWorker):
                     self.name,
                     correlation_id
                 ))
+                await self.event_bus.publish(Event.create(
+                    EventType.RESPONSE_READY,
+                    {"text": f"Permission Denied: {validation.reason}"},
+                    self.name,
+                    correlation_id
+                ))
                 return
 
             # 2. Confirmation (if restricted/dangerous)
@@ -63,6 +69,12 @@ class ToolWorker(BaseWorker):
                 await self.event_bus.publish(Event.create(
                     EventType.ACTION_DENIED,
                     {"reason": "user_refused_permission", "tool_name": tool_name},
+                    self.name,
+                    correlation_id
+                ))
+                await self.event_bus.publish(Event.create(
+                    EventType.RESPONSE_READY,
+                    {"text": "Action denied: User refused permission."},
                     self.name,
                     correlation_id
                 ))
@@ -83,6 +95,12 @@ class ToolWorker(BaseWorker):
                     self.name,
                     correlation_id
                 ))
+                await self.event_bus.publish(Event.create(
+                    EventType.RESPONSE_READY,
+                    {"text": f"Action {tool_name} was cancelled."},
+                    self.name,
+                    correlation_id
+                ))
             finally:
                 self._active_tasks.pop(correlation_id, None)
         except Exception as e:
@@ -91,7 +109,10 @@ class ToolWorker(BaseWorker):
     async def execute_tool(self, name: str, params: dict, correlation_id: str, risk: ToolRisk) -> ToolResult:
         tool_func = self.registry.get_tool(name)
         if not tool_func:
-            return ToolResult(False, "", f"Tool '{name}' not found in registry")
+            err_msg = f"Tool '{name}' not found in registry"
+            await self.event_bus.publish(Event.create(EventType.ACTION_FAILED, {"error": err_msg}, self.name, correlation_id))
+            await self.event_bus.publish(Event.create(EventType.RESPONSE_READY, {"text": err_msg}, self.name, correlation_id))
+            return ToolResult(False, "", err_msg)
 
         start_time = time.time()
         await self.event_bus.publish(Event.create(
@@ -129,14 +150,29 @@ class ToolWorker(BaseWorker):
                 self.name,
                 correlation_id
             ))
+            
+            response_text = result.output if result.success else f"Action failed: {result.error}"
+            if not response_text:
+                response_text = f"Action {name} completed successfully."
+                
+            await self.event_bus.publish(Event.create(
+                EventType.RESPONSE_READY,
+                {"text": response_text},
+                self.name,
+                correlation_id
+            ))
+            
             return result
 
         except asyncio.TimeoutError:
+            err_msg = "Execution timed out (15s limit)"
             await self.event_bus.publish(Event.create(EventType.ACTION_TIMEOUT, {"tool_name": name}, self.name, correlation_id))
-            return ToolResult(False, "", "Execution timed out (15s limit)")
+            await self.event_bus.publish(Event.create(EventType.RESPONSE_READY, {"text": f"Action {name} timed out."}, self.name, correlation_id))
+            return ToolResult(False, "", err_msg)
         except Exception as e:
             self.logger.exception("tool_execution_failed")
             await self.event_bus.publish(Event.create(EventType.ACTION_FAILED, {"error": str(e)}, self.name, correlation_id))
+            await self.event_bus.publish(Event.create(EventType.RESPONSE_READY, {"text": f"Action failed with error: {str(e)}"}, self.name, correlation_id))
             return ToolResult(False, "", str(e))
 
     async def stop(self) -> None:

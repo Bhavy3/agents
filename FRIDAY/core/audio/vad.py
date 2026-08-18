@@ -18,7 +18,7 @@ class VadWorker(BaseWorker):
         min_speech_duration: float = 0.5,
         max_speech_duration: float = 30.0,
         speech_inactivity_timeout: float = 1.5,
-        activation_chunks: int = 3, # Need this many speech chunks to start
+        activation_chunks: int = 1, # Need this many speech chunks to start
         cooldown_seconds: float = 0.8, # Wait before starting new segment
     ) -> None:
         super().__init__("vad", event_bus)
@@ -37,6 +37,7 @@ class VadWorker(BaseWorker):
         self._current_segment_chunks: list[bytes] = []
         self._current_segment_id: str | None = None
         self._max_amplitude = 0.0
+        self._noise_floor = silence_threshold
         
         # Debouncing
         self._speech_chunk_counter = 0
@@ -50,12 +51,13 @@ class VadWorker(BaseWorker):
     async def run(self) -> None:
         # Override run to set up subscription
         self.event_bus.subscribe(EventType.AUDIO_CHUNK_RECEIVED, self._handle_audio_chunk)
+        self.event_bus.subscribe(EventType.AUDIO_CHUNK, self._handle_audio_chunk)
         await super().run()
 
     async def _handle_audio_chunk(self, event: Event) -> None:
         amplitude = event.payload.get("amplitude", 0.0)
         timestamp = event.payload.get("timestamp", time.perf_counter())
-        data = event.payload.get("data", b"")
+        data = event.payload.get("data", event.payload.get("audio_data", b""))
 
         async with self._lock:
             now = timestamp

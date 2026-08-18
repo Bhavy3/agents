@@ -71,3 +71,27 @@ async def test_llm_fallback_router_emits_events():
     event_types = [e.event_type for e in events]
     assert EventType.LLM_REQUEST_SENT in event_types
     assert EventType.LLM_RESPONSE_RECEIVED in event_types
+
+@pytest.mark.asyncio
+async def test_health_check_ttl_caching():
+    from core.llm.local_llm_client import LocalLLMClient, LlmProvider
+    
+    client = LocalLLMClient(provider=LlmProvider.LLAMACPP)
+    
+    # First call - mock HTTP get
+    with patch("httpx.AsyncClient.get") as mock_get:
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_get.return_value = mock_response
+        
+        result1 = await client.health_check()
+        assert result1 is True
+        assert mock_get.call_count == 1
+        
+    # Second call - should hit TTL cache, NO HTTP get should be made
+    with patch("httpx.AsyncClient.get") as mock_get_2:
+        result2 = await client.health_check()
+        assert result2 is True
+        assert mock_get_2.call_count == 0
+        
+    await client.aclose()

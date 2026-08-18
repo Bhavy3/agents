@@ -31,9 +31,10 @@ class Settings:
     root_dir: Path
     queue_size: int = DEFAULT_QUEUE_SIZE
     dry_run: bool = DRY_RUN_MODE
-    ollama_model: str = "qwen2.5:7b"
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_timeout_seconds: float = 30.0
+    ollama_model: str = "qwen2.5-3b-instruct-q5_k_m"
+    ollama_base_url: str = "http://127.0.0.1:8080"
+    llm_provider: str = "llamacpp"
+    ollama_timeout_seconds: float = 120.0
     ollama_max_retries: int = 2
     runtime_mode: RuntimeMode = RuntimeMode.DEVELOPMENT
     event_max_age_seconds: float = DEFAULT_EVENT_MAX_AGE_SECONDS
@@ -46,6 +47,7 @@ class Settings:
     task_growth_warning_count: int = DEFAULT_TASK_GROWTH_WARNING_COUNT
     snapshot_interval_seconds: float = DEFAULT_SNAPSHOT_INTERVAL_SECONDS
     log_level: str = "INFO"
+    console_log_level: str = "WARNING"
     json_logging: bool = True
     tts_model_path: str | None = None
     tts_config_path: str | None = None
@@ -65,10 +67,20 @@ def load_settings() -> Settings:
         runtime_mode = RuntimeMode(mode_value)
     except ValueError:
         runtime_mode = RuntimeMode.DEVELOPMENT
+
+    base_url = os.getenv("FRIDAY_LLM_BASE_URL", os.getenv("FRIDAY_OLLAMA_BASE_URL", "http://127.0.0.1:8080"))
+    model = os.getenv("FRIDAY_LLM_MODEL", os.getenv("FRIDAY_OLLAMA_MODEL", "qwen2.5-3b-instruct-q5_k_m"))
+    provider = os.getenv("FRIDAY_LLM_PROVIDER", "llamacpp")
+    console_level = os.getenv("FRIDAY_CONSOLE_LOG_LEVEL", "WARNING")
+
     if runtime_mode == RuntimeMode.TESTING:
         return Settings(
             root_dir=Path(__file__).resolve().parents[2],
             runtime_mode=runtime_mode,
+            ollama_base_url=base_url,
+            ollama_model=model,
+            llm_provider=provider,
+            console_log_level=console_level,
             queue_size=300,
             event_max_age_seconds=30.0,
             event_handler_timeout_seconds=2.0,
@@ -82,6 +94,10 @@ def load_settings() -> Settings:
         return Settings(
             root_dir=Path(__file__).resolve().parents[2],
             runtime_mode=runtime_mode,
+            ollama_base_url=base_url,
+            ollama_model=model,
+            llm_provider=provider,
+            console_log_level=console_level,
             queue_size=5000,
             event_max_age_seconds=60.0,
             event_handler_timeout_seconds=5.0,
@@ -91,4 +107,11 @@ def load_settings() -> Settings:
             task_growth_warning_count=200,
             snapshot_interval_seconds=30.0,
         )
-    return Settings(root_dir=Path(__file__).resolve().parents[2], runtime_mode=runtime_mode)
+    return Settings(
+        root_dir=Path(__file__).resolve().parents[2],
+        runtime_mode=runtime_mode,
+        ollama_base_url=base_url,
+        ollama_model=model,
+        llm_provider=provider,
+        console_log_level=console_level,
+    )

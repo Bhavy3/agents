@@ -32,7 +32,7 @@ class SttWorker(BaseWorker):
         self.max_queue_size = max_queue_size
         
         self.queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=self.max_queue_size)
-        self.model: WhisperModel | None = None
+        self.model: Any = None
         self._is_initialized = False
         self._loop = asyncio.get_event_loop()
         

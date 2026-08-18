@@ -38,7 +38,9 @@ class OrchestratorWorker(BaseWorker):
         self.injector = PersonalityPromptInjector()
         self.presence = PresenceManager()
         
+        self._state_lock = asyncio.Lock()
         self.active_turn_id: str | None = None
+        self._latest_memory_context = ""
         self.current_mode = PersonaMode.ENGINEERING
         self.current_style = StyleConfig(tone="focused", verbosity="concise", pacing="normal")
         self.active_speaker: str | None = None
@@ -46,9 +48,11 @@ class OrchestratorWorker(BaseWorker):
         self._routing_task: asyncio.Task | None = None
         self._last_activity_time = time.perf_counter()
         
+        self._chat_confirmed = False
+        self._chunk_buffer: list[str] = []
+        
         # Interrupt storm protection
         self._interrupt_cooldown_until = 0.0
-        self.interrupt_cooldown_seconds = 1.5
 
         # Stats
         self.active_conversations = 0
@@ -60,6 +64,7 @@ class OrchestratorWorker(BaseWorker):
     async def run(self) -> None:
         self.event_bus.subscribe(EventType.STT_FINAL_TRANSCRIPT, self._handle_final_transcript)
         self.event_bus.subscribe(EventType.SPEECH_STARTED, self._handle_speech_started)
+        self.event_bus.subscribe(EventType.USER_SPEECH, self._handle_user_speech)
 
         # Map LLM Stream events to Conversation events
         self.event_bus.subscribe(EventType.STREAM_STARTED, self._handle_stream_started)
@@ -73,38 +78,66 @@ class OrchestratorWorker(BaseWorker):
         
         # Personality updates
         self.event_bus.subscribe(EventType.PERSONALITY_STYLE_UPDATED, self._handle_personality_update)
+        self.event_bus.subscribe(EventType.MEMORY_CONTEXT_READY, self._handle_memory_context)
         await super().run()
+
+    async def _handle_memory_context(self, event: Event) -> None:
+        async with self._state_lock:
+            context_str = event.payload.get("context", "")
+            # Cap at 500 chars per requirements
+            if len(context_str) > 500:
+                context_str = context_str[:497] + "..."
+            self._latest_memory_context = context_str
 
     async def _handle_speech_started(self, event: Event) -> None:
         """User started speaking. Interrupt any active assistant response."""
         now = time.perf_counter()
         self._last_activity_time = now
         
-        # Interrupt storm debounce
-        if now < self._interrupt_cooldown_until:
-            return
+        async with self._state_lock:
+            is_interruption = (self.active_speaker == "assistant" or self._routing_task is not None)
+            
+            if is_interruption:
+                # Interrupt storm debounce
+                if now < self._interrupt_cooldown_until:
+                    return
+                    
+                self._interrupt_cooldown_until = now + self.interrupt_cooldown_seconds
+                self.interruptions += 1
+                
+                # Capture values to cancel outside lock
+                routing_task_to_cancel = self._routing_task
+                turn_id_to_interrupt = self.active_turn_id
+                
+                self._routing_task = None
+            else:
+                routing_task_to_cancel = None
+                turn_id_to_interrupt = None
+                
+            self.active_speaker = "user"
         
-        if self.active_speaker == "assistant" or self._routing_task is not None:
-            self._interrupt_cooldown_until = now + self.interrupt_cooldown_seconds
-            self.interruptions += 1
-            self.logger.info("conversation_interrupted", extra={"turn_id": self.active_turn_id})
+        if is_interruption:
+            self.logger.info("conversation_interrupted", extra={"turn_id": turn_id_to_interrupt})
             
             # Cancel active routing/inference
-            if self._routing_task and not self._routing_task.done():
-                self._routing_task.cancel()
+            if routing_task_to_cancel and not routing_task_to_cancel.done():
+                routing_task_to_cancel.cancel()
             self.streaming_worker.cancel_all()
             
-            if self.active_turn_id:
+            if turn_id_to_interrupt:
                 await self.event_bus.publish(
                     Event.create(
                         EventType.CONVERSATION_INTERRUPTED,
-                        {"turn_id": self.active_turn_id, "reason": "user_interruption"},
+                        {"turn_id": turn_id_to_interrupt, "reason": "user_interruption"},
                         self.name
                     )
                 )
-                
-            self.active_speaker = "user"
-            self._routing_task = None
+
+    async def _handle_user_speech(self, event: Event) -> None:
+        """Handle user speech events to keep active speaker aligned."""
+        status = event.payload.get("status")
+        if status == "started":
+            await self._handle_speech_started(event)
 
     async def _handle_final_transcript(self, event: Event) -> None:
         """Process finalized text from STT."""
@@ -113,7 +146,7 @@ class OrchestratorWorker(BaseWorker):
             return
             
         await self._handle_speech_started(event)
-        await self._initiate_turn(text, event.correlation_id)
+        asyncio.create_task(self._initiate_turn(text, event.correlation_id))
 
     async def _handle_cli_text(self, event: Event) -> None:
         """Process text directly from CLI."""
@@ -123,17 +156,27 @@ class OrchestratorWorker(BaseWorker):
             
         # Cancel active turn if CLI is used
         await self._handle_speech_started(event)
-        await self._initiate_turn(text, event.correlation_id)
+        asyncio.create_task(self._initiate_turn(text, event.correlation_id))
 
     async def _initiate_turn(self, text: str, correlation_id: str | None) -> None:
         self._last_activity_time = time.perf_counter()
-        self.active_turn_id = str(uuid.uuid4())[:8]
-        self.active_speaker = "user"
+        
+        async with self._state_lock:
+            turn_id = str(uuid.uuid4())[:8]
+            self.active_turn_id = turn_id
+            self.active_speaker = "user"
+            self._chat_confirmed = False
+            self._chunk_buffer.clear()
+            
+            # Append to context
+            self.context.append({"role": "user", "content": text})
+            if len(self.context) > self.max_context_turns * 2:
+                self.context = self.context[-(self.max_context_turns * 2):]
         
         await self.event_bus.publish(
             Event.create(
                 EventType.CONVERSATION_TURN_STARTED,
-                {"turn_id": self.active_turn_id, "speaker": "user"},
+                {"turn_id": turn_id, "speaker": "user"},
                 self.name,
                 correlation_id
             )
@@ -142,7 +185,7 @@ class OrchestratorWorker(BaseWorker):
         await self.event_bus.publish(
             Event.create(
                 EventType.USER_MESSAGE_RECEIVED,
-                {"turn_id": self.active_turn_id, "text": text},
+                {"turn_id": turn_id, "text": text},
                 self.name,
                 correlation_id
             )
@@ -157,24 +200,21 @@ class OrchestratorWorker(BaseWorker):
             await self.event_bus.publish(
                 Event.create(
                     EventType.ASSISTANT_RESPONSE_PARTIAL,
-                    {"turn_id": self.active_turn_id, "text": ack + " "},
+                    {"turn_id": turn_id, "text": ack + " "},
                     self.name,
                     correlation_id
                 )
             )
 
-        # Append to context
-        self.context.append({"role": "user", "content": text})
-        if len(self.context) > self.max_context_turns * 2:
-            self.context = self.context[-(self.max_context_turns * 2):]
-            
-        # Yield to assistant
-        self.active_speaker = "assistant"
-        
-        # Spawn routing task so Orchestrator remains unblocked
-        self._routing_task = asyncio.create_task(
-            self._route_and_execute(text, self.active_turn_id, correlation_id)
-        )
+        async with self._state_lock:
+            if self.active_turn_id == turn_id:
+                # Yield to assistant
+                self.active_speaker = "assistant"
+                
+                # Spawn routing task so Orchestrator remains unblocked
+                self._routing_task = asyncio.create_task(
+                    self._route_and_execute(text, turn_id, correlation_id)
+                )
 
     async def _handle_personality_update(self, event: Event) -> None:
         self.current_mode = PersonaMode(event.payload["persona_mode"])
@@ -191,6 +231,11 @@ class OrchestratorWorker(BaseWorker):
         try:
             # Generate personality instructions
             personality_instructions = self.injector.get_style_instructions(self.current_style, self.current_mode)
+            
+            async with self._state_lock:
+                mem_ctx = self._latest_memory_context
+            if mem_ctx:
+                personality_instructions += f"\n\nSystem Memory/Context:\n{mem_ctx}"
             
             # Check if this should be a multi-step workflow
             if self.prompt_planner and ("fix" in text.lower() or "debug" in text.lower() or "workflow" in text.lower()):
@@ -216,9 +261,61 @@ class OrchestratorWorker(BaseWorker):
                     return
 
             # Otherwise, proceed with simple routing
-            mock_event = Event.create(EventType.USER_MESSAGE_RECEIVED, {"text": text}, self.name, correlation_id)
-            await self.intent_router.handle_user_text(mock_event, personality_instructions=personality_instructions)
+            intent = await self.intent_router.route(
+                text,
+                context=self.context,
+                correlation_id=correlation_id,
+                personality_instructions=personality_instructions,
+            )
             self.routed_messages += 1
+
+            if intent.name.value == "chat":
+                async with self._state_lock:
+                    self._chat_confirmed = True
+                    # Flush speculative chunk buffer
+                    chunk_buffer = list(self._chunk_buffer)
+                    self._chunk_buffer.clear()
+                    
+                for chunk in chunk_buffer:
+                    await self.event_bus.publish(
+                        Event.create(
+                            EventType.ASSISTANT_RESPONSE_PARTIAL,
+                            {"turn_id": turn_id, "text": chunk},
+                            self.name,
+                            correlation_id,
+                        )
+                    )
+
+                # Chat intent: get the response text and surface it to the terminal
+                response_text = intent.parameters.get("response_text", intent.parameters.get("text", ""))
+                if response_text:
+                    async with self._state_lock:
+                        if self.active_turn_id == turn_id:
+                            self.context.append({"role": "assistant", "content": response_text})
+                    await self.event_bus.publish(
+                        Event.create(
+                            EventType.RESPONSE_READY,
+                            {"text": response_text, "turn_id": turn_id},
+                            self.name,
+                            correlation_id,
+                        )
+                    )
+            else:
+                async with self._state_lock:
+                    self._chunk_buffer.clear()
+                action_id = str(uuid.uuid4())
+                await self.event_bus.publish(
+                    Event.create(
+                        EventType.ACTION_REQUESTED,
+                        {
+                            "action_id": action_id,
+                            "intent": intent.name.value,
+                            "parameters": intent.parameters,
+                        },
+                        self.name,
+                        correlation_id,
+                    )
+                )
             
             # If the routing finishes successfully
             duration = time.perf_counter() - start_time
@@ -236,73 +333,101 @@ class OrchestratorWorker(BaseWorker):
         except Exception as e:
             self.logger.error("routing_failed", extra={"error": str(e), "turn_id": turn_id})
         finally:
-            if self.active_turn_id == turn_id:
-                self._routing_task = None
+            async with self._state_lock:
+                if self.active_turn_id == turn_id:
+                    self._routing_task = None
+                    if self.active_speaker == "assistant":
+                        self.active_speaker = None
 
     # Translating LLM Stream Events to Conversation Events
     async def _handle_stream_started(self, event: Event) -> None:
-        if self.active_speaker != "assistant":
-            return
+        async with self._state_lock:
+            if self.active_speaker != "assistant":
+                return
+            turn_id = self.active_turn_id
+            
         await self.event_bus.publish(
             Event.create(
                 EventType.ASSISTANT_RESPONSE_STARTED,
-                {"turn_id": self.active_turn_id},
+                {"turn_id": turn_id},
                 self.name,
                 event.correlation_id
             )
         )
 
     async def _handle_stream_chunk(self, event: Event) -> None:
-        if self.active_speaker != "assistant":
-            return
-        await self.event_bus.publish(
-            Event.create(
-                EventType.ASSISTANT_RESPONSE_PARTIAL,
-                {"turn_id": self.active_turn_id, "text": event.payload.get("chunk", "")},
-                self.name,
-                event.correlation_id
+        async with self._state_lock:
+            if self.active_speaker != "assistant":
+                return
+            chat_confirmed = self._chat_confirmed
+            turn_id = self.active_turn_id
+            
+        chunk = event.payload.get("chunk", "")
+        if chat_confirmed:
+            await self.event_bus.publish(
+                Event.create(
+                    EventType.ASSISTANT_RESPONSE_PARTIAL,
+                    {"turn_id": turn_id, "text": chunk},
+                    self.name,
+                    event.correlation_id
+                )
             )
-        )
+        else:
+            async with self._state_lock:
+                if self.active_speaker == "assistant" and self.active_turn_id == turn_id:
+                    self._chunk_buffer.append(chunk)
 
     async def _handle_stream_completed(self, event: Event) -> None:
-        if self.active_speaker != "assistant":
-            return
-            
-        full_text = event.payload.get("full_text", "")
-        self.context.append({"role": "assistant", "content": full_text})
+        async with self._state_lock:
+            if self.active_speaker != "assistant":
+                return
+                
+            full_text = event.payload.get("full_text", "")
+            self.context.append({"role": "assistant", "content": full_text})
+            turn_id = self.active_turn_id
+            self.active_speaker = None
             
         await self.event_bus.publish(
             Event.create(
                 EventType.ASSISTANT_RESPONSE_COMPLETED,
-                {"turn_id": self.active_turn_id, "text": full_text},
+                {"turn_id": turn_id, "text": full_text},
                 self.name,
                 event.correlation_id
             )
         )
 
     async def _handle_stream_cancelled(self, event: Event) -> None:
-        if self.active_speaker != "assistant":
-            return
+        async with self._state_lock:
+            if self.active_speaker != "assistant":
+                return
+            turn_id = self.active_turn_id
+            self.active_speaker = None
+            
         await self.event_bus.publish(
             Event.create(
                 EventType.ASSISTANT_RESPONSE_CANCELLED,
-                {"turn_id": self.active_turn_id, "reason": event.payload.get("reason", "unknown")},
+                {"turn_id": turn_id, "reason": event.payload.get("reason", "unknown")},
                 self.name,
                 event.correlation_id
             )
         )
 
     async def _handle_stream_timeout(self, event: Event) -> None:
-        if self.active_speaker != "assistant":
-            return
+        async with self._state_lock:
+            if self.active_speaker != "assistant":
+                return
+            turn_id = self.active_turn_id
+            self.active_speaker = None
+            
         await self.event_bus.publish(
             Event.create(
                 EventType.CONVERSATION_TIMEOUT,
-                {"turn_id": self.active_turn_id, "timeout_type": event.payload.get("timeout_type", "unknown")},
+                {"turn_id": turn_id, "timeout_type": event.payload.get("timeout_type", "unknown")},
                 self.name,
                 event.correlation_id
             )
         )
+
 
     async def work(self) -> None:
         try:
@@ -312,29 +437,41 @@ class OrchestratorWorker(BaseWorker):
                 
                 # Check for inactive conversation timeout (e.g., reset context after 5 mins)
                 now = time.perf_counter()
-                if now - self._last_activity_time > 300.0 and len(self.context) > 0:
-                    self.logger.info("conversation_context_reset_timeout")
-                    self.context.clear()
-                    self.active_turn_id = None
-                    self.active_speaker = None
-                    
-                # Check response generation timeout (if stuck in routing for too long)
-                if self.active_speaker == "assistant" and self._routing_task and not self._routing_task.done():
-                    if now - self._last_activity_time > self.response_timeout_seconds:
-                        self.logger.warning("conversation_response_timeout", extra={"turn_id": self.active_turn_id})
-                        self._routing_task.cancel()
-                        self.streaming_worker.cancel_all()
-                        
-                        if self.active_turn_id:
-                            await self.event_bus.publish(
-                                Event.create(
-                                    EventType.CONVERSATION_TIMEOUT,
-                                    {"turn_id": self.active_turn_id, "timeout_type": "routing_timeout"},
-                                    self.name
-                                )
-                            )
+                async with self._state_lock:
+                    if now - self._last_activity_time > 300.0 and len(self.context) > 0:
+                        self.logger.info("conversation_context_reset_timeout")
+                        self.context.clear()
+                        self.active_turn_id = None
                         self.active_speaker = None
-                        self._routing_task = None
+                        
+                    # Check response generation timeout (if stuck in routing for too long)
+                    if self.active_speaker == "assistant" and self._routing_task and not self._routing_task.done():
+                        if now - self._last_activity_time > self.response_timeout_seconds:
+                            turn_id_to_timeout = self.active_turn_id
+                            routing_task_to_cancel = self._routing_task
+                            
+                            self._routing_task = None
+                            self.active_speaker = None
+                        else:
+                            turn_id_to_timeout = None
+                            routing_task_to_cancel = None
+                    else:
+                        turn_id_to_timeout = None
+                        routing_task_to_cancel = None
+                        
+                if routing_task_to_cancel:
+                    self.logger.warning("conversation_response_timeout", extra={"turn_id": turn_id_to_timeout})
+                    routing_task_to_cancel.cancel()
+                    self.streaming_worker.cancel_all()
+                    
+                    if turn_id_to_timeout:
+                        await self.event_bus.publish(
+                            Event.create(
+                                EventType.CONVERSATION_TIMEOUT,
+                                {"turn_id": turn_id_to_timeout, "timeout_type": "routing_timeout"},
+                                self.name
+                            )
+                        )
                         
         except asyncio.CancelledError:
             pass

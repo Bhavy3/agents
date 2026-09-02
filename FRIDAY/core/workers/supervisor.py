@@ -28,10 +28,13 @@ class WorkerSupervisor:
     metrics: RuntimeMetrics | None = None
     heartbeat_timeout_seconds: float = DEFAULT_WORKER_HEARTBEAT_TIMEOUT_SECONDS
     max_restarts_per_minute: int = DEFAULT_MAX_RESTARTS_PER_MINUTE
+    max_total_restarts: int = 15
+    max_total_restarts_window_seconds: float = 600.0
     _tasks: dict[str, asyncio.Task[None]] = field(default_factory=dict)
     _worker_tasks: dict[str, asyncio.Task[None]] = field(default_factory=dict)
     _worker_task_generations: dict[str, int] = field(default_factory=dict)
     _restart_windows: dict[str, deque[datetime]] = field(default_factory=dict)
+    _total_restart_windows: dict[str, deque[datetime]] = field(default_factory=dict)
     _running: bool = False
     logger: logging.Logger = field(init=False, repr=False)
 
@@ -44,6 +47,8 @@ class WorkerSupervisor:
             self.metrics.active_workers = len(self.workers)
         for worker in self.workers:
             self._restart_windows[worker.name] = deque()
+            self._total_restart_windows[worker.name] = deque()
+            self._total_restart_windows[worker.name] = deque()
             self.logger.info(
                 "worker_supervision_scheduled",
                 extra={"worker": worker.name, "state": worker.health.state.value},
@@ -113,7 +118,13 @@ class WorkerSupervisor:
                         },
                     )
                     worker_task.cancel()
-                    await asyncio.gather(worker_task, return_exceptions=True)
+                    try:
+                        await asyncio.wait_for(asyncio.gather(worker_task, return_exceptions=True), timeout=5.0)
+                    except asyncio.TimeoutError:
+                        self.logger.error(
+                            "worker_cancel_timeout",
+                            extra={"worker": worker.name, "timeout_seconds": 5.0},
+                        )
                     break
 
                 if error is None:
@@ -219,18 +230,34 @@ class WorkerSupervisor:
 
     def _register_restart_attempt(self, worker: BaseWorker) -> bool:
         now = datetime.now(UTC)
+        
+        # 1. Check short-term fast crashes (per minute)
         restart_window = self._restart_windows.setdefault(worker.name, deque())
         while restart_window and (now - restart_window[0]).total_seconds() > 60.0:
             restart_window.popleft()
         restart_window.append(now)
-        allowed = len(restart_window) <= self.max_restarts_per_minute
+        allowed_short = len(restart_window) <= self.max_restarts_per_minute
+        
+        # 2. Check long-term cumulative slow crashes (over the longer window)
+        total_window = self._total_restart_windows.setdefault(worker.name, deque())
+        while total_window and (now - total_window[0]).total_seconds() > self.max_total_restarts_window_seconds:
+            total_window.popleft()
+        total_window.append(now)
+        allowed_long = len(total_window) <= self.max_total_restarts
+        
+        allowed = allowed_short and allowed_long
+        
         self.logger.info(
             "worker_restart_attempt_recorded",
             extra={
                 "worker": worker.name,
-                "attempts_in_window": len(restart_window),
+                "attempts_in_minute": len(restart_window),
                 "max_restarts_per_minute": self.max_restarts_per_minute,
+                "attempts_in_total_window": len(total_window),
+                "max_total_restarts": self.max_total_restarts,
+                "total_window_seconds": self.max_total_restarts_window_seconds,
                 "restart_allowed": allowed,
+                "reason_denied": "fast_crash_limit" if not allowed_short else ("slow_crash_limit" if not allowed_long else None)
             },
         )
         return allowed

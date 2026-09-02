@@ -1,0 +1,13 @@
+﻿__pycache__/
+*.pyc
+*.log
+*.log.*
+*.db
+FRIDAY/data/logs/
+FRIDAY/data/memory/
+FRIDAY/data/models/
+FRIDAY/data/workflows/active_workflows.json
+FRIDAY/scratch/
+FRIDAY/patch*.py
+FRIDAY/v/
+.venv/

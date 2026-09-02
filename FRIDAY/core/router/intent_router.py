@@ -39,8 +39,8 @@ class IntentRouter:
             )
         )
 
-    async def route(self, text: str, context: list[dict[str, str]] | None = None, correlation_id: str | None = None, personality_instructions: str = "") -> Intent:
+    async def route(self, text: str, context: list[dict[str, str]] | None = None, correlation_id: str | None = None, personality_instructions: str = "", chat_instructions: str = "") -> Intent:
         rule_intent = route_by_rules(text)
         if rule_intent is not None:
             return rule_intent
-        return await self.llm_fallback.route(text, context=context, correlation_id=correlation_id, personality_instructions=personality_instructions)
+        return await self.llm_fallback.route(text, context=context, correlation_id=correlation_id, personality_instructions=personality_instructions, chat_instructions=chat_instructions)

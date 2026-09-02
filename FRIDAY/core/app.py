@@ -94,6 +94,7 @@ class FridayApp:
         from core.audio.stt import SttWorker
         from core.audio.tts import TtsWorker
         from core.orchestrator.conversation import OrchestratorWorker
+        from core.audio.pipecat_worker import PipecatAudioWorker
         
         orchestrator = OrchestratorWorker(
             self.event_bus,
@@ -107,15 +108,17 @@ class FridayApp:
             self.event_bus,
             model_path=self.settings.tts_model_path,
             config_path=self.settings.tts_config_path,
+            output_device=self.settings.audio_output_device,
         )
         
         self.supervisor = WorkerSupervisor(
             self.event_bus,
             workers=[
                 HealthcheckWorker(self.event_bus, interval_seconds=healthcheck_interval),
-                AudioTransportWorker(self.event_bus),
-                VadWorker(self.event_bus),
-                SttWorker(self.event_bus),
+                # AudioTransportWorker(self.event_bus, input_device=self.settings.audio_input_device),
+                # VadWorker(self.event_bus, silence_threshold=0.0005),
+                # SttWorker(self.event_bus),
+                PipecatAudioWorker(self.event_bus),
                 orchestrator,
                 tts_worker,
                 self.tool_worker,
@@ -129,6 +132,8 @@ class FridayApp:
             metrics=self.metrics,
             heartbeat_timeout_seconds=self.settings.worker_heartbeat_timeout_seconds,
             max_restarts_per_minute=self.settings.max_restarts_per_minute,
+            max_total_restarts=self.settings.max_total_restarts,
+            max_total_restarts_window_seconds=self.settings.max_total_restarts_window_seconds,
         )
 
         self.operational_monitor = OperationalMonitorWorker(

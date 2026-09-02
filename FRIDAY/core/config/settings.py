@@ -30,6 +30,7 @@ class RuntimeMode(StrEnum):
 class Settings:
     root_dir: Path
     queue_size: int = DEFAULT_QUEUE_SIZE
+    vad_stop_secs: float = 2.0
     dry_run: bool = DRY_RUN_MODE
     ollama_model: str = "qwen2.5-3b-instruct-q5_k_m"
     ollama_base_url: str = "http://127.0.0.1:8080"
@@ -43,6 +44,8 @@ class Settings:
     command_timeout_seconds: float = DEFAULT_COMMAND_TIMEOUT_SECONDS
     shutdown_timeout_seconds: float = DEFAULT_SHUTDOWN_TIMEOUT_SECONDS
     max_restarts_per_minute: int = DEFAULT_MAX_RESTARTS_PER_MINUTE
+    max_total_restarts: int = 15
+    max_total_restarts_window_seconds: float = 600.0
     memory_growth_warning_bytes: int = DEFAULT_MEMORY_GROWTH_WARNING_BYTES
     task_growth_warning_count: int = DEFAULT_TASK_GROWTH_WARNING_COUNT
     snapshot_interval_seconds: float = DEFAULT_SNAPSHOT_INTERVAL_SECONDS
@@ -51,6 +54,9 @@ class Settings:
     json_logging: bool = True
     tts_model_path: str | None = None
     tts_config_path: str | None = None
+    audio_output_device: int | str | None = None
+    audio_input_device: int | str | None = None
+    mute_gate_delay: float = 0.6
 
     @property
     def data_dir(self) -> Path:
@@ -72,6 +78,29 @@ def load_settings() -> Settings:
     model = os.getenv("FRIDAY_LLM_MODEL", os.getenv("FRIDAY_OLLAMA_MODEL", "qwen2.5-3b-instruct-q5_k_m"))
     provider = os.getenv("FRIDAY_LLM_PROVIDER", "llamacpp")
     console_level = os.getenv("FRIDAY_CONSOLE_LOG_LEVEL", "WARNING")
+    
+    root_dir = Path(__file__).resolve().parents[2]
+    default_tts_model = str(root_dir / "data" / "models" / "tts" / "en_US-hfc_female-medium.onnx")
+    default_tts_config = default_tts_model + ".json"
+    tts_model_path = os.getenv("FRIDAY_TTS_MODEL_PATH", default_tts_model if os.path.exists(default_tts_model) else None)
+    tts_config_path = os.getenv("FRIDAY_TTS_CONFIG_PATH", default_tts_config if os.path.exists(default_tts_config) else None)
+
+    def parse_device(env_val: str | None) -> int | str | None:
+        if not env_val:
+            return None
+        try:
+            return int(env_val)
+        except ValueError:
+            return env_val
+
+    audio_output_device = parse_device(os.getenv("FRIDAY_AUDIO_OUTPUT_DEVICE"))
+    audio_input_device = parse_device(os.getenv("FRIDAY_AUDIO_INPUT_DEVICE"))
+
+    mute_gate_delay_str = os.getenv("FRIDAY_MUTE_GATE_DELAY")
+    mute_gate_delay = float(mute_gate_delay_str) if mute_gate_delay_str else 0.6
+
+    vad_stop_secs_str = os.getenv("FRIDAY_VAD_STOP_SECS")
+    vad_stop_secs = float(vad_stop_secs_str) if vad_stop_secs_str else 2.0
 
     if runtime_mode == RuntimeMode.TESTING:
         return Settings(
@@ -86,9 +115,17 @@ def load_settings() -> Settings:
             event_handler_timeout_seconds=2.0,
             worker_heartbeat_timeout_seconds=5.0,
             max_restarts_per_minute=20,
+            max_total_restarts=8,
+            max_total_restarts_window_seconds=300.0,
             memory_growth_warning_bytes=20_000_000,
             task_growth_warning_count=50,
             snapshot_interval_seconds=5.0,
+            tts_model_path=tts_model_path,
+            tts_config_path=tts_config_path,
+            audio_output_device=audio_output_device,
+            audio_input_device=audio_input_device,
+            vad_stop_secs=vad_stop_secs,
+            mute_gate_delay=mute_gate_delay,
         )
     if runtime_mode == RuntimeMode.PRODUCTION:
         return Settings(
@@ -103,9 +140,17 @@ def load_settings() -> Settings:
             event_handler_timeout_seconds=5.0,
             worker_heartbeat_timeout_seconds=90.0,
             max_restarts_per_minute=5,
+            max_total_restarts=15,
+            max_total_restarts_window_seconds=900.0,
             memory_growth_warning_bytes=100_000_000,
             task_growth_warning_count=200,
             snapshot_interval_seconds=30.0,
+            tts_model_path=tts_model_path,
+            tts_config_path=tts_config_path,
+            audio_output_device=audio_output_device,
+            audio_input_device=audio_input_device,
+            vad_stop_secs=vad_stop_secs,
+            mute_gate_delay=mute_gate_delay,
         )
     return Settings(
         root_dir=Path(__file__).resolve().parents[2],
@@ -114,4 +159,10 @@ def load_settings() -> Settings:
         ollama_model=model,
         llm_provider=provider,
         console_log_level=console_level,
+        tts_model_path=tts_model_path,
+        tts_config_path=tts_config_path,
+        audio_output_device=audio_output_device,
+        audio_input_device=audio_input_device,
+            vad_stop_secs=vad_stop_secs,
+        mute_gate_delay=mute_gate_delay,
     )

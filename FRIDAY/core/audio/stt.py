@@ -75,6 +75,7 @@ class SttWorker(BaseWorker):
 
     async def _handle_segment(self, event: Event) -> None:
         """Called asynchronously when VAD finishes a speech segment."""
+        self.logger.info(f"STT_RECEIVED_SEGMENT segment_id={event.payload.get('segment_id')}")
         if not self._is_initialized:
             return
             
@@ -116,7 +117,9 @@ class SttWorker(BaseWorker):
         segments, info = self.model.transcribe(audio_array, beam_size=1, vad_filter=False)
         
         full_text = ""
+        self.logger.info(f"STT_RAW_SEGMENTS_GENERATOR_STARTED segment_id={segment_id}")
         for segment in segments:
+            self.logger.info(f"STT_RAW_SEGMENT segment_id={segment_id} text='{segment.text}'")
             if self.should_stop:
                 break
                 
@@ -172,6 +175,7 @@ class SttWorker(BaseWorker):
                         self.transcripts_produced += 1
                         self.total_latency += latency
                         
+                        self.logger.info(f"PUBLISHING_STT_FINAL_TRANSCRIPT segment_id={segment_id} text='{text}'")
                         await self.event_bus.publish(
                             Event.create(
                                 EventType.STT_FINAL_TRANSCRIPT,

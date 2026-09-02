@@ -45,7 +45,7 @@ class LlmFallbackRouter:
         self.streaming_worker = streaming_worker
         self.valid_tools = valid_tools or []
 
-    async def route(self, text: str, context: list[dict[str, str]] | None = None, correlation_id: str | None = None, personality_instructions: str = "") -> Intent:
+    async def route(self, text: str, context: list[dict[str, str]] | None = None, correlation_id: str | None = None, personality_instructions: str = "", chat_instructions: str = "") -> Intent:
         await self._emit(EventType.LLM_REQUEST_SENT, {"model": self.ollama.model, "prompt_preview": text[:100]}, correlation_id)
 
         try:
@@ -102,15 +102,15 @@ class LlmFallbackRouter:
         if intent_name == IntentName.CHAT:
             if self.streaming_worker:
                 try:
-                    context_str = ""
+                    context_str = chat_instructions + "\n\n" if chat_instructions else ""
                     if context:
-                        context_str = "\n".join(f"{c['role'].capitalize()}: {c['content']}" for c in context[:-1])
-                        if context_str:
-                            context_str += f"\nUser: {text}\nResponse:"
+                        history_str = "\n".join(f"{c['role'].capitalize()}: {c['content']}" for c in context[:-1])
+                        if history_str:
+                            context_str += history_str + f"\nUser: {text}\nResponse:"
                         else:
-                            context_str = f"User: {text}\nResponse:"
+                            context_str += f"User: {text}\nResponse:"
                     else:
-                        context_str = f"User: {text}\nResponse:"
+                        context_str += f"User: {text}\nResponse:"
                     streamed = await self.streaming_worker.stream_reasoning(context_str.strip(), correlation_id)
                     if streamed:
                         chat_response_text = streamed

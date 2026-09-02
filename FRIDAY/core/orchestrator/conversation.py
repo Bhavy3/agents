@@ -24,7 +24,7 @@ class OrchestratorWorker(BaseWorker):
         intent_router: IntentRouter,
         streaming_worker: StreamingLlmWorker,
         prompt_planner: Optional[PromptPlanner] = None,
-        max_context_turns: int = 10,
+        max_context_turns: int = 5,
         response_timeout_seconds: float = 30.0,
         interrupt_cooldown_seconds: float = 1.5,
     ) -> None:
@@ -141,6 +141,8 @@ class OrchestratorWorker(BaseWorker):
 
     async def _handle_final_transcript(self, event: Event) -> None:
         """Process finalized text from STT."""
+        print(f"\n\n[DIAGNOSTIC] _handle_final_transcript invoked! text='{event.payload.get('text', '')}'")
+        self.logger.info(f"ORCHESTRATOR_RECEIVED_FINAL_TRANSCRIPT text='{event.payload.get('text', '')}'")
         text = event.payload.get("text", "").strip()
         if not text:
             return
@@ -230,12 +232,15 @@ class OrchestratorWorker(BaseWorker):
         start_time = time.perf_counter()
         try:
             # Generate personality instructions
-            personality_instructions = self.injector.get_style_instructions(self.current_style, self.current_mode)
+            base_instructions = self.injector.get_style_instructions(self.current_style, self.current_mode)
             
             async with self._state_lock:
                 mem_ctx = self._latest_memory_context
+                
+            router_instructions = base_instructions
+            chat_instructions = base_instructions
             if mem_ctx:
-                personality_instructions += f"\n\nSystem Memory/Context:\n{mem_ctx}"
+                chat_instructions += f"\n\nSystem Memory/Context:\n{mem_ctx}"
             
             # Check if this should be a multi-step workflow
             if self.prompt_planner and ("fix" in text.lower() or "debug" in text.lower() or "workflow" in text.lower()):
@@ -261,11 +266,15 @@ class OrchestratorWorker(BaseWorker):
                     return
 
             # Otherwise, proceed with simple routing
+            print(f"\n\n[DIAGNOSTIC] About to call intent_router.route().")
+            print(f"  router_instructions type: {type(router_instructions)}, len: {len(router_instructions) if router_instructions else 0}")
+            print(f"  chat_instructions type: {type(chat_instructions)}, len: {len(chat_instructions) if chat_instructions else 0}")
             intent = await self.intent_router.route(
                 text,
                 context=self.context,
                 correlation_id=correlation_id,
-                personality_instructions=personality_instructions,
+                personality_instructions=router_instructions,
+                chat_instructions=chat_instructions,
             )
             self.routed_messages += 1
 
@@ -331,6 +340,9 @@ class OrchestratorWorker(BaseWorker):
             self.logger.info("routing_cancelled", extra={"turn_id": turn_id})
             # Cancellation is handled in _handle_speech_started
         except Exception as e:
+            import traceback
+            print(f"\n\n[DIAGNOSTIC] _route_and_execute THREW EXCEPTION: {repr(e)}")
+            traceback.print_exc()
             self.logger.error("routing_failed", extra={"error": str(e), "turn_id": turn_id})
         finally:
             async with self._state_lock:

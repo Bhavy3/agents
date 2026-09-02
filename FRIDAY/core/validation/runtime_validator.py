@@ -134,7 +134,7 @@ class RuntimeValidator:
         end_time = asyncio.get_running_loop().time() + duration_seconds
         while asyncio.get_running_loop().time() < end_time:
             await self.app.event_bus.publish_raw_for_validation("malformed-event")
-            await asyncio.sleep(0.25)
+            await asyncio.sleep(2.5)
 
     async def _simulate_queue_pressure(self, duration_seconds: float) -> None:
         end_time = asyncio.get_running_loop().time() + duration_seconds

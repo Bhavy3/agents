@@ -1,5 +1,5 @@
 # FRIDAY — FINAL PHASE
-
+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
 # Phase Ω (OMEGA) — Living Cognitive Runtime
 
 This is the final REAL phase.
@@ -453,6 +453,7 @@ But because:
 * random workers
 * duplicated authority
 * event spam systems
+* silently swallowing exceptions or empty except blocks
 
 ---
 
@@ -463,6 +464,7 @@ But because:
 * optimize incrementally
 * test under real usage
 * prioritize feel over complexity
+* log actual exception messages and stack traces at ERROR level on catch
 
 ---
 

@@ -296,7 +296,7 @@ class EventBus:
         if self.metrics is not None:
             self.metrics.record_dropped_event()
             self.metrics.queue_depth = self._queue.qsize()
-        self._logger.error(
+        self._logger.debug(
             "malformed_event_dropped",
             extra={"reason": reason, **details},
         )

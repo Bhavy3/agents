@@ -28,11 +28,13 @@ class TtsWorker(BaseWorker):
         event_bus: EventBus,
         model_path: str | None = None,
         config_path: str | None = None,
+        output_device: int | str | None = None,
         max_queue_size: int = 50,
     ) -> None:
         super().__init__("tts", event_bus)
         self.model_path = model_path
         self.config_path = config_path
+        self.output_device = output_device
         self.max_queue_size = max_queue_size
         self.logger = get_logger("audio.tts")
 
@@ -48,6 +50,7 @@ class TtsWorker(BaseWorker):
         self.chunks_synthesized = 0
         self.interruptions = 0
         self.synthesis_errors = 0
+        self.active_turn_id = None
         self.playback_active = False
 
     async def run(self) -> None:
@@ -69,7 +72,9 @@ class TtsWorker(BaseWorker):
         self.event_bus.subscribe(EventType.ASSISTANT_RESPONSE_CANCELLED, self._handle_interruption)
         self.event_bus.subscribe(EventType.SPEECH_STARTED, self._handle_interruption)
         self.event_bus.subscribe(EventType.CONVERSATION_INTERRUPTED, self._handle_interruption)
+        self.event_bus.subscribe(EventType.CONVERSATION_TURN_STARTED, self._handle_turn_started)
 
+        self._loop = asyncio.get_running_loop()
         # 3. Start playback thread
         self._playback_thread = threading.Thread(target=self._playback_loop, daemon=True)
         self._playback_thread.start()
@@ -78,15 +83,31 @@ class TtsWorker(BaseWorker):
 
     def _initialize_piper(self) -> bool:
         try:
+            import time
             self.voice = PiperVoice.load(self.model_path, self.config_path)
+            
+            # Warm-up synthesis to force onnxruntime graph optimization during startup
+            start_warmup = time.perf_counter()
+            list(self.voice.synthesize("warmup"))
+            warmup_duration = time.perf_counter() - start_warmup
+            
             self._is_initialized = True
-            self.logger.info("tts_initialized", extra={"model": self.model_path})
+            self.logger.info("tts_warmup_complete", extra={"model": self.model_path, "warmup_duration_s": round(warmup_duration, 3)})
             return True
         except Exception as e:
             self.logger.error("tts_load_error", extra={"error": str(e)})
             return False
 
+    async def _handle_turn_started(self, event: Event) -> None:
+        self.active_turn_id = event.payload.get("turn_id")
+
     async def _handle_partial_response(self, event: Event) -> None:
+        turn_id = event.payload.get("turn_id")
+        
+        # Validate turn context
+        if self.active_turn_id and turn_id and turn_id != self.active_turn_id:
+            return
+
         chunk = event.payload.get("text", "")
         if not chunk:
             return
@@ -160,45 +181,86 @@ class TtsWorker(BaseWorker):
                     break
                 
                 try:
-                    self._playback_queue.put(chunk.audio_data, timeout=1.0)
+                    self._playback_queue.put(chunk.audio_int16_bytes, timeout=1.0)
                     self.chunks_synthesized += 1
                 except queue.Full:
                     self.logger.warning("tts_queue_full_dropping_audio")
                     break
         except Exception as e:
-            self.logger.error("piper_stream_failed", extra={"error": str(e)})
+            self.logger.error(f"piper_stream_failed: {str(e)}", exc_info=True)
+
+    def _fire_playback_event(self, event_type: EventType) -> None:
+        if hasattr(self, "_loop") and self._loop and not self._loop.is_closed():
+            import asyncio
+            asyncio.run_coroutine_threadsafe(
+                self.event_bus.publish(
+                    Event.create(event_type, {}, self.name)
+                ),
+                self._loop
+            )
 
     def _playback_loop(self) -> None:
-        sample_rate = 22050
+        sample_rate = self.voice.config.sample_rate if self.voice and hasattr(self.voice, "config") else 22050
         
-        try:
-            # Using sounddevice RawOutputStream for byte-based playback
-            with sd.RawOutputStream(samplerate=sample_rate, blocksize=1024, channels=1, dtype='int16') as stream:
-                while not self.should_stop:
-                    try:
-                        audio_data = self._playback_queue.get(timeout=0.1)
-                    except queue.Empty:
-                        self.playback_active = False
-                        continue
-                    
-                    self.playback_active = True
-                    self._stop_playback.clear()
-                    
-                    # Write in 1024-sample blocks (2048 bytes for int16)
-                    block_bytes = 1024 * 2
-                    for i in range(0, len(audio_data), block_bytes):
-                        if self._stop_playback.is_set():
-                            break
-                        
-                        chunk = audio_data[i:i+block_bytes]
-                        if len(chunk) < block_bytes:
-                            chunk = chunk + b'\x00' * (block_bytes - len(chunk))
-                        
-                        stream.write(chunk)
-                    
+        import sounddevice as sd
+        import time
+        import queue
+        
+        self.audio_buffer = bytearray()
+        
+        def callback(outdata, frames, time_info, status):
+            if status:
+                pass # Ignore status warnings like underflow to avoid log spam
+            
+            bytes_needed = frames * 2 # 16-bit mono = 2 bytes per frame
+            
+            if self._stop_playback.is_set():
+                self.audio_buffer.clear()
+                self._stop_playback.clear()
+                
+            # Fill buffer if we need more
+            while len(self.audio_buffer) < bytes_needed:
+                try:
+                    chunk = self._playback_queue.get_nowait()
+                    self.audio_buffer.extend(chunk)
                     self._playback_queue.task_done()
+                except queue.Empty:
+                    break
+                    
+            if len(self.audio_buffer) >= bytes_needed:
+                outdata[:] = bytes(self.audio_buffer[:bytes_needed])
+                del self.audio_buffer[:bytes_needed]
+                if not self.playback_active:
+                    self.playback_active = True
+                    self._fire_playback_event(EventType.TTS_PLAYBACK_STARTED)
+            else:
+                # Pad with silence
+                silence_needed = bytes_needed - len(self.audio_buffer)
+                outdata[:] = bytes(self.audio_buffer) + (b'\x00' * silence_needed)
+                self.audio_buffer.clear()
+                if self.playback_active:
+                    self.playback_active = False
+                    self._fire_playback_event(EventType.TTS_PLAYBACK_COMPLETED)
+
+        try:
+            with sd.RawOutputStream(
+                samplerate=sample_rate, 
+                blocksize=1024,
+                channels=1, 
+                dtype='int16', 
+                callback=callback,
+                device=self.output_device
+            ):
+                while not self.should_stop:
+                    time.sleep(0.1)
         except Exception as e:
-            self.logger.error("tts_playback_failed", extra={"error": str(e)})
+            self.logger.error("tts_playback_failed", extra={"error": str(e)}, exc_info=True)
+
+    async def stop(self) -> None:
+        await super().stop()
+        self._stop_playback.set()
+        if self._playback_thread and self._playback_thread.is_alive():
+            self._playback_thread.join(timeout=2.0)
 
     async def work(self) -> None:
         try:

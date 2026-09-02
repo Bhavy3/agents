@@ -86,6 +86,9 @@ async def test_tts_sentence_segmentation():
             task = asyncio.create_task(worker.run())
             await asyncio.sleep(0.1)
             
+            # Reset mock to ignore the warmup call
+            mock_voice.synthesize.reset_mock()
+            
             # Send partial text without sentence end
             await bus.publish(Event.create(EventType.ASSISTANT_RESPONSE_PARTIAL, {"turn_id": "turn_1", "text": "Hello"}, "orchestrator"))
             await asyncio.sleep(0.1)

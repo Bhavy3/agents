@@ -126,7 +126,7 @@ class LocalLLMClient:
         self._port = parsed.port or (11434 if self.provider == LlmProvider.OLLAMA else 8080)
 
     def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None:
+        if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(timeout=self.timeout_seconds)
         return self._client
 
@@ -178,8 +178,8 @@ class LocalLLMClient:
                     response = await client.get(version_url, timeout=3.0)
                     if response.status_code == 200:
                         self._available = True
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.debug("ollama_version_check_failed", extra={"error": str(e)})
                 if not self._available:
                     tags_url = f"{self.base_url.rstrip('/')}/api/tags"
                     response = await client.get(tags_url, timeout=3.0)
@@ -362,6 +362,15 @@ class LocalLLMClient:
                     if done:
                         break
         except asyncio.CancelledError:
+            # Close client on cancellation to prevent resource leaks
+            if self._client:
+                await self._client.aclose()
+                self._client = None
+            raise
+        except (httpx.RemoteProtocolError, httpx.LocalProtocolError, httpx.ConnectError) as e:
+            # Close and recreate client on protocol/connection errors that indicate corruption
+            # Normal errors keep client alive for connection reuse
+            self.logger.warning("llm_client_corrupted_closing", extra={"error": str(e)})
             if self._client:
                 await self._client.aclose()
                 self._client = None

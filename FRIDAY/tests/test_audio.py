@@ -11,6 +11,14 @@ from core.events.event_types import EventType
 @pytest.fixture
 def mock_sd():
     with patch("core.audio.transport.sd") as mock:
+        # Configure mock InputStream to return proper blocking read data
+        stream_mock = MagicMock()
+        def mock_read(*args, **kwargs):
+            import time
+            time.sleep(0.01)
+            return (np.zeros((1024, 1), dtype="float32"), False)
+        stream_mock.read.side_effect = mock_read
+        mock.InputStream.return_value = stream_mock
         yield mock
 
 
@@ -48,19 +56,18 @@ async def test_audio_worker_buffer_overflow(mock_sd):
     worker = AudioTransportWorker(bus, max_buffer_chunks=2)
     await worker._start_audio()
     
-    # Simulate callbacks — these now go into _chunk_queue, not _buffer
+    # Simulate queue insertion directly (what the read thread does)
     dummy_data = np.zeros((1024, 1), dtype="float32")
-    worker._audio_callback(dummy_data, 1024, None, None)
-    worker._audio_callback(dummy_data, 1024, None, None)
+    import time
+    worker._chunk_queue.put_nowait((dummy_data, 1024, time.perf_counter()))
+    worker._chunk_queue.put_nowait((dummy_data, 1024, time.perf_counter()))
     
     # Queue should have 2 items
     assert worker._chunk_queue.qsize() == 2
     
-    # Third callback should trigger drop-oldest in queue (max_buffer_chunks*2 = 4 queue slots)
-    # but with only 2 buffer chunks the deque will cap at 2
-    worker._audio_callback(dummy_data, 1024, None, None)
-    worker._audio_callback(dummy_data, 1024, None, None)
-    worker._audio_callback(dummy_data, 1024, None, None)  # 5th into a queue of maxsize=4 → drop-oldest
+    # Third insertion should trigger drop-oldest in queue (max_buffer_chunks*2 = 4 queue slots)
+    worker._chunk_queue.put_nowait((dummy_data, 1024, time.perf_counter()))
+    worker._chunk_queue.put_nowait((dummy_data, 1024, time.perf_counter()))
     
     # Manually drain queue into buffer (simulating what work() does)
     import queue
@@ -94,9 +101,21 @@ async def test_audio_worker_timeout(mock_sd):
     # Start worker and run loop
     task = asyncio.create_task(worker.run())
     
+    # Wait for initialization
+    await asyncio.sleep(0.1)
+    
+    # Stop the read thread to simulate no audio data
+    worker._read_thread_stop.set()
+    
+    # Send a dummy chunk via queue so _total_chunks > 0
+    dummy_data = np.zeros((1024, 1), dtype="float32")
+    import time
+    worker._chunk_queue.put_nowait((dummy_data, 1024, time.perf_counter()))
+    
     # Wait for timeout to trigger
     await asyncio.sleep(0.5)
     
+    # Timeout should have triggered
     assert len(events) == 1
     assert events[0].payload["timeout_type"] == "inactivity"
     

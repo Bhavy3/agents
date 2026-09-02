@@ -13,7 +13,7 @@ async def test_vad_debounce_prevents_early_speech_start():
     """VAD should not emit SPEECH_STARTED until activation_chunks threshold is met."""
     bus = EventBus()
     await bus.start()
-    vad = VadWorker(bus, silence_threshold=0.01, activation_chunks=3)
+    vad = VadWorker(bus, silence_threshold=0.01, activation_chunks=3); vad._ort_session = None
     await vad.start()
     await asyncio.sleep(0.05)
 
@@ -41,7 +41,7 @@ async def test_vad_debounce_fires_after_threshold():
     """VAD should emit SPEECH_STARTED only after activation_chunks are received."""
     bus = EventBus()
     await bus.start()
-    vad = VadWorker(bus, silence_threshold=0.01, activation_chunks=3)
+    vad = VadWorker(bus, silence_threshold=0.01, activation_chunks=3); vad._ort_session = None
     await vad.start()
     await asyncio.sleep(0.05)
 

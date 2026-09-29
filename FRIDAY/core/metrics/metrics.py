@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -17,6 +18,11 @@ class RuntimeMetrics:
     stream_count: int = 0
     chunk_count: int = 0
     stream_error_count: int = 0
+    
+    # TTS Playback Metrics
+    stream_end_fires: int = 0
+    safety_net_fires: int = 0
+    tts_rolling_window: deque[str] = field(default_factory=lambda: deque(maxlen=20))
     
     # Memory Metrics
     memories_stored: int = 0
@@ -56,6 +62,21 @@ class RuntimeMetrics:
     def record_restart(self) -> None:
         self.restart_count += 1
 
+    def record_tts_completion(self, trigger: str) -> None:
+        if trigger == "stream_end":
+            self.stream_end_fires += 1
+            self.tts_rolling_window.append("stream_end")
+        elif trigger == "safety_net":
+            self.safety_net_fires += 1
+            self.tts_rolling_window.append("safety_net")
+
+    @property
+    def tts_safety_net_ratio(self) -> float:
+        total = self.stream_end_fires + self.safety_net_fires
+        if total == 0:
+            return 0.0
+        return self.safety_net_fires / total
+
     @property
     def average_processing_time_seconds(self) -> float:
         if self.processed_events == 0:
@@ -76,4 +97,7 @@ class RuntimeMetrics:
             "average_processing_time_seconds": round(self.average_processing_time_seconds, 6),
             "queue_depth": self.queue_depth,
             "active_workers": self.active_workers,
+            "stream_end_fires": self.stream_end_fires,
+            "safety_net_fires": self.safety_net_fires,
+            "tts_safety_net_ratio": round(self.tts_safety_net_ratio, 4),
         }

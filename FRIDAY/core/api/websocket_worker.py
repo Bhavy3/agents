@@ -140,10 +140,10 @@ class WebsocketServerWorker(BaseWorker):
                             else:
                                 os.kill(pid, signal.SIGKILL)
                             return True
-                        except (ValueError, OSError):
-                            pass
-        except Exception:
-            pass
+                        except (ValueError, OSError) as e:
+                            self.logger.warning("kill_process_failed", extra={"pid": pid, "error": str(e)})
+        except Exception as e:
+            self.logger.error("kill_process_on_port_error", extra={"port": port, "error": str(e)}, exc_info=True)
         return False
 
     async def work(self) -> None:

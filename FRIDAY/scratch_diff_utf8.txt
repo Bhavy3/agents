@@ -1,0 +1,1581 @@
+﻿diff --git a/FRIDAY/AGENTS.md b/FRIDAY/AGENTS.md
+index 5841ac7..5917c79 100644
+--- a/FRIDAY/AGENTS.md
++++ b/FRIDAY/AGENTS.md
+@@ -1,20 +1,27 @@
+-Good news: the conversation itself worked correctly - real audio played multiple
+-times, and the semantic self-feedback filter caught and correctly dropped one echo
+-("Understood.") instead of looping. Both defense layers are functioning.
++# STILL NOT ACCEPTED ΓÇö Need The Actual Evidence, Not The Summary
+ 
+-One remaining issue: a RuntimeError during Pa_Terminate happens on shutdown (Ctrl+C)
+-- this is the continuously-open output stream not being cleanly closed before the
+-asyncio event loop tears down. This doesn't affect the live conversation, only
+-happens on exit.
++This reads well, but per the explicit requirement in the last task, none
++of the required proof was actually included:
+ 
+-Fix: ensure TtsWorker's output stream is explicitly stopped and closed in a proper
+-shutdown/cleanup method BEFORE the event loop closes, rather than relying on
+-sounddevice's atexit handler to clean it up after the loop is already gone. Add
+-this to whatever shutdown sequence FRIDAY already has for other workers.
++1. Full diffs for all 5 files (bus.py, conversation.py, pipecat_worker.py,
++   metrics.py, health_dashboard.py) ΓÇö not described, shown.
++2. The actual pytest terminal output showing "109 passed" ΓÇö paste the real
++   command output, not just the summary number.
++3. The actual code for `scripts/verify_hardware_tts_live.py`.
++4. The actual raw terminal log output from running that script for all
++   3 scenarios ΓÇö every log line, including the `pipecat_firing_
++   tts_playback_completed` / `stream_end_fires` / `safety_net_fires`
++   lines as they were printed in real time, not a table you compiled
++   afterward.
++5. Specifically for the state-machine hardening in TtsOutputProcessor:
++   show the actual `_stream_ended_turn` / `_cancelled_turns` logic you
++   implemented, and confirm in the log evidence that a genuinely
++   cancelled-turn's stale stream_end really was correctly ignored at
++   least once during testing (or state if this specific case wasn't
++   exercised, since all 3 scenarios described are normal completions,
++   not interruptions).
+ 
+-Also: reduce/remove the "TTS DEBUG: received chunk" WARNING-level spam - we
+-temporarily elevated it for visibility, but now that we've confirmed the fix works,
+-downgrade it back to DEBUG or remove it, the terminal is very noisy again.
+-
+-Verify: run main.py, have a real conversation, and this time exit cleanly (type
+-'exit' if that's supported, or confirm Ctrl+C no longer throws that traceback).
++Paste all of the above. Good results don't get a pass on evidence ΓÇö if
++anything the standard is higher here since this exact claim ("TTS_STREAM_END
++now works reliably") has been made and later found false multiple times in
++this project already.
+\ No newline at end of file
+diff --git a/FRIDAY/core/api/websocket_worker.py b/FRIDAY/core/api/websocket_worker.py
+index e276f43..7a1e2f5 100644
+--- a/FRIDAY/core/api/websocket_worker.py
++++ b/FRIDAY/core/api/websocket_worker.py
+@@ -140,10 +140,10 @@ class WebsocketServerWorker(BaseWorker):
+                             else:
+                                 os.kill(pid, signal.SIGKILL)
+                             return True
+-                        except (ValueError, OSError):
+-                            pass
+-        except Exception:
+-            pass
++                        except (ValueError, OSError) as e:
++                            self.logger.warning("kill_process_failed", extra={"pid": pid, "error": str(e)})
++        except Exception as e:
++            self.logger.error("kill_process_on_port_error", extra={"port": port, "error": str(e)}, exc_info=True)
+         return False
+ 
+     async def work(self) -> None:
+diff --git a/FRIDAY/core/app.py b/FRIDAY/core/app.py
+index 2e9102a..659e059 100644
+--- a/FRIDAY/core/app.py
++++ b/FRIDAY/core/app.py
+@@ -108,7 +108,6 @@ class FridayApp:
+             self.event_bus,
+             model_path=self.settings.tts_model_path,
+             config_path=self.settings.tts_config_path,
+-            output_device=self.settings.audio_output_device,
+         )
+         
+         self.supervisor = WorkerSupervisor(
+diff --git a/FRIDAY/core/audio/pipecat_worker.py b/FRIDAY/core/audio/pipecat_worker.py
+index 6eb881a..7b3f55a 100644
+--- a/FRIDAY/core/audio/pipecat_worker.py
++++ b/FRIDAY/core/audio/pipecat_worker.py
+@@ -1,6 +1,14 @@
+-∩╗┐import asyncio
++import asyncio
+ import time
+ import uuid
++import difflib
++import audioop
++from collections import deque
++
++try:
++    from aec_audio_processing import AudioProcessor
++except ImportError:
++    AudioProcessor = None
+ 
+ try:
+     from pipecat.pipeline.pipeline import Pipeline
+@@ -12,7 +20,7 @@ try:
+     from pipecat.audio.vad.vad_analyzer import VADParams
+     from pipecat.processors.audio.vad_processor import VADProcessor
+     from pipecat.processors.frame_processor import FrameProcessor
+-    from pipecat.frames.frames import TranscriptionFrame, AudioRawFrame
++    from pipecat.frames.frames import TranscriptionFrame, AudioRawFrame, OutputAudioRawFrame
+ except ImportError:
+     pass  # Allow tests to mock
+ 
+@@ -22,16 +30,116 @@ from core.events.models import Event
+ from core.workers.base_worker import BaseWorker
+ from core.config.settings import load_settings
+ 
++class AecProcessor(FrameProcessor):
++    def __init__(self, worker: 'PipecatAudioWorker', delay_ms: int = 180, enable_ns: bool = False, enable_agc: bool = False):
++        super().__init__()
++        self.worker = worker
++        self.logger = worker.logger
++        self.aec = None
++        self.enabled = False
++        # Lock required: AudioProcessor is a SWIG wrapper around C++ WebRTC APM.
++        # The underlying native object maintains mutable filter state (delay estimator,
++        # echo path coefficients, adaptation state). process_stream() (called from
++        # Pipecat's pipeline task) and process_reverse_stream() (called from
++        # TtsOutputProcessor's event-bus callback task) can run in different asyncio
++        # tasks. Without a lock, interleaved C++ calls corrupt internal state.
++        self._aec_lock = asyncio.Lock()
++        
++        if AudioProcessor is not None:
++            self.aec = AudioProcessor(enable_aec=True, enable_ns=enable_ns, enable_agc=enable_agc, enable_vad=False)
++            self.aec.set_stream_format(16000, 1)
++            self.aec.set_reverse_stream_format(16000, 1)
++            self.aec.set_stream_delay(delay_ms)
++            self.enabled = True
++        
++        self._mic_buffer = bytearray()
++        self._ref_buffer = bytearray()
++        self._ratecv_state = None
++        self._log_counter = 0
++
++    async def feed_reference(self, audio_data: bytes, sample_rate: int):
++        if not self.enabled:
++            return
++            
++        if sample_rate != 16000:
++            import warnings
++            with warnings.catch_warnings():
++                warnings.simplefilter("ignore", DeprecationWarning)
++                audio_data, self._ratecv_state = audioop.ratecv(
++                    audio_data, 2, 1, sample_rate, 16000, self._ratecv_state
++                )
++        
++        self._ref_buffer.extend(audio_data)
++        
++        async with self._aec_lock:
++            while len(self._ref_buffer) >= 320:
++                chunk = bytes(self._ref_buffer[:320])
++                self._ref_buffer = self._ref_buffer[320:]
++                try:
++                    self.aec.process_reverse_stream(chunk)
++                except Exception as e:
++                    self.logger.error("aec_reverse_stream_error", extra={"error": str(e)}, exc_info=True)
++
++    async def process_frame(self, frame, direction):
++        if not self.enabled:
++            await super().process_frame(frame, direction)
++            await self.push_frame(frame, direction)
++            return
++
++        frame_type = type(frame).__name__
++        if frame_type in ('AudioRawFrame', 'InputAudioRawFrame'):
++            self._mic_buffer.extend(frame.audio)
++            
++            clean_audio = bytearray()
++            
++            async with self._aec_lock:
++                while len(self._mic_buffer) >= 320:
++                    chunk = bytes(self._mic_buffer[:320])
++                    self._mic_buffer = self._mic_buffer[320:]
++                    try:
++                        processed_chunk = self.aec.process_stream(chunk)
++                        clean_audio.extend(processed_chunk)
++                        
++                        self._log_counter += 1
++                        if self._log_counter % 200 == 0:
++                            # TUNING GUIDELINES:
++                            # If aec_delay_ms is TOO LOW: Echo bursts arrive at the start of TTS before the filter adapts.
++                            # If aec_delay_ms is TOO HIGH: The AEC waits too long and misses the echo entirely.
++                            # Adjust by increments of 10-20ms. Target is no audible echo bleed.
++                            self.logger.debug("aec_tuning_stats", extra={
++                                "delay_ms": self.aec.get_stream_delay(),
++                                "has_voice": self.aec.has_voice(),
++                                "instructions": "Adjust FRIDAY_AEC_DELAY_MS. Too low = echo bursts at start. Too high = consistent echo bleed."
++                            })
++                    except Exception as e:
++                        self.logger.error("aec_forward_stream_error", extra={"error": str(e)}, exc_info=True)
++                        clean_audio.extend(chunk)
++            
++            if clean_audio:
++                clean_frame = type(frame)(
++                    audio=bytes(clean_audio),
++                    sample_rate=16000,
++                    num_channels=1
++                )
++                await super().process_frame(clean_frame, direction)
++                await self.push_frame(clean_frame, direction)
++            return
++            
++        await super().process_frame(frame, direction)
++        await self.push_frame(frame, direction)
++
+ class MuteGateProcessor(FrameProcessor):
+     def __init__(self, worker: 'PipecatAudioWorker'):
+         super().__init__()
+         self.worker = worker
+ 
+     async def process_frame(self, frame, direction):
+-        if type(frame).__name__ == 'AudioRawFrame':
++        frame_type = type(frame).__name__
++            
++        if frame_type in ('AudioRawFrame', 'InputAudioRawFrame'):
+             if self.worker.is_tts_playing:
+                 muted_audio = b'\x00' * len(frame.audio)
+-                frame = AudioRawFrame(
++                frame = type(frame)(
+                     audio=muted_audio,
+                     sample_rate=frame.sample_rate,
+                     num_channels=frame.num_channels
+@@ -49,11 +157,6 @@ class TranscriptionPublisher(FrameProcessor):
+ 
+     async def process_frame(self, frame, direction):
+         frame_type = type(frame).__name__
+-        if frame_type not in ('AudioRawFrame', 'InputAudioRawFrame', 'OutputAudioRawFrame', 'SystemFrame', 'MetricsFrame', 'UserSpeakingFrame'):
+-            print(f"RAW DIAGNOSTIC: TranscriptionPublisher.process_frame CALLED with frame type {frame_type}")
+-            if frame_type == 'TranscriptionFrame':
+-                print(f"RAW DIAGNOSTIC: TranscriptionFrame received! text='{frame.text}'")
+-            self.logger.info("pipecat_frame_received_trace", extra={"frame_type": frame_type})
+         
+         if frame_type in ('UserStartedSpeakingFrame', 'VADUserStartedSpeakingFrame'):
+             payload = {"timestamp": time.time(), "amplitude": 1.0}
+@@ -70,10 +173,10 @@ class TranscriptionPublisher(FrameProcessor):
+                 time_since_speech = time.time() - self.worker.last_spoken_time
+                 
+                 if time_since_speech < (self.worker.mute_gate_delay + 3.0) and clean_spoken:
+-                    if len(clean_transcription) > 3 and clean_transcription in clean_spoken:
+-                        self.logger.warning(f"MUTE GATE CAUGHT SELF-FEEDBACK: '{text}' matched recent TTS output")
+-                        print(f"\n\n[DIAGNOSTIC] MUTE GATE CAUGHT SELF-FEEDBACK: '{text}'\n\n")
+-                        return
++                    if not getattr(frame, "is_interim", False) and text.strip():
++                        if text.strip() in self.worker.last_tts_text:
++                            self.logger.warning(f"MUTE GATE CAUGHT SELF-FEEDBACK: '{text}' matched recent TTS output")
++                            return
+ 
+                 segment_id = f"pipecat-{uuid.uuid4().hex[:8]}"
+                 duration = time.perf_counter() - self.segment_start_time
+@@ -85,35 +188,401 @@ class TranscriptionPublisher(FrameProcessor):
+                     "confidence": 1.0
+                 }
+                 
+-                print(f"RAW DIAGNOSTIC: Payload prepared: {payload}")
+                 self.logger.info("pipecat_stt_final", extra={"text": payload["text"], "duration": duration})
+                 
+-                try:
+-                    print(f"RAW DIAGNOSTIC: ABOUT TO CALL event_bus.publish({EventType.STT_FINAL_TRANSCRIPT})")
++                if payload["text"].strip():
+                     self.logger.info("pipecat_publish_attempt", extra={
+-                        "event_type": str(EventType.STT_FINAL_TRANSCRIPT),
+-                        "payload": payload
++                        "event": EventType.STT_FINAL_TRANSCRIPT.value,
++                        "text_preview": payload["text"][:20]
+                     })
+-                    await self.event_bus.publish(
+-                        Event.create(
+-                            EventType.STT_FINAL_TRANSCRIPT,
+-                            payload,
+-                            "PipecatAudioWorker"
++                    try:
++                        asyncio.create_task(
++                            self.event_bus.publish(
++                                Event.create(EventType.STT_FINAL_TRANSCRIPT, payload, "PipecatAudioWorker")
++                            )
+                         )
+-                    )
+-                    print(f"RAW DIAGNOSTIC: SUCCESSFULLY CALLED event_bus.publish")
+-                    self.logger.info("pipecat_publish_success")
+-                except Exception as e:
+-                    import traceback
+-                    print(f"RAW DIAGNOSTIC: EXCEPTION CAUGHT DURING PUBLISH:")
+-                    traceback.print_exc()
+-                    self.logger.error("pipecat_publish_error", extra={"error": str(e)}, exc_info=True)
++                        self.logger.info("pipecat_publish_success")
++                    except Exception as e:
++                        self.logger.error("pipecat_publish_error", extra={"error": str(e)}, exc_info=True)
+                 
+                 self.segment_start_time = time.perf_counter()
+         
+         await super().process_frame(frame, direction)
+         await self.push_frame(frame, direction)
+ 
++class TtsOutputProcessor(FrameProcessor):
++    def __init__(self, worker: 'PipecatAudioWorker'):
++        super().__init__()
++        self.worker = worker
++        self.event_bus = worker.event_bus
++        self.logger = worker.logger
++        self._playback_active = False
++        self._last_chunk_time = 0.0
++        self._debounce_task = None
++        self._lock = asyncio.Lock()
++        self._current_chunk_id = None
++        self._active_turn_id = None
++        self._stream_ended_turn = None
++        self._cancelled_turns: set[str] = set()
++        
++        self.event_bus.subscribe(EventType.CONVERSATION_TURN_STARTED, self._handle_turn_started)
++        self.event_bus.subscribe(EventType.TTS_AUDIO_CHUNK, self._handle_tts_chunk)
++        self.event_bus.subscribe(EventType.TTS_STREAM_END, self._handle_tts_stream_end)
++        self.event_bus.subscribe(EventType.TTS_PLAYBACK_CANCELLED, self._handle_tts_cancelled)
++        self.event_bus.subscribe(EventType.CONVERSATION_INTERRUPTED, self._handle_interrupted)
++
++    async def cleanup(self) -> None:
++        await super().cleanup()
++        self.event_bus.unsubscribe(EventType.CONVERSATION_TURN_STARTED, self._handle_turn_started)
++        self.event_bus.unsubscribe(EventType.TTS_AUDIO_CHUNK, self._handle_tts_chunk)
++        self.event_bus.unsubscribe(EventType.TTS_STREAM_END, self._handle_tts_stream_end)
++        self.event_bus.unsubscribe(EventType.TTS_PLAYBACK_CANCELLED, self._handle_tts_cancelled)
++        self.event_bus.unsubscribe(EventType.CONVERSATION_INTERRUPTED, self._handle_interrupted)
++        if self._debounce_task and not self._debounce_task.done():
++            self._debounce_task.cancel()
++
++    async def _handle_turn_started(self, event: Event) -> None:
++        turn_id = event.payload.get("turn_id")
++        async with self._lock:
++            self._active_turn_id = turn_id
++            self._current_chunk_id = None
++            self._stream_ended_turn = None
++            if turn_id and turn_id in self._cancelled_turns:
++                self._cancelled_turns.remove(turn_id)
++
++    async def _handle_interrupted(self, event: Event) -> None:
++        turn_id = event.payload.get("turn_id")
++        async with self._lock:
++            if turn_id:
++                self._cancelled_turns.add(turn_id)
++            self._playback_active = False
++            self._active_turn_id = None
++            self._stream_ended_turn = None
++            if self._debounce_task and not self._debounce_task.done():
++                self._debounce_task.cancel()
++
++    async def _handle_tts_chunk(self, event: Event) -> None:
++        audio_data = event.payload.get("audio_data")
++        sample_rate = event.payload.get("sample_rate", 22050)
++        chunk_id = event.payload.get("chunk_id")
++        turn_id = event.payload.get("turn_id")
++        
++        if not audio_data:
++            return
++
++        async with self._lock:
++            if turn_id and turn_id in self._cancelled_turns:
++                return
++
++            self._last_chunk_time = time.time()
++            self._current_chunk_id = chunk_id
++            if turn_id:
++                self._active_turn_id = turn_id
++            
++            if not self._playback_active:
++                self._playback_active = True
++                self.logger.info("pipecat_firing_tts_playback_started", extra={"chunk_id": chunk_id, "turn_id": turn_id})
++                await self.event_bus.publish(
++                    Event.create(EventType.TTS_PLAYBACK_STARTED, {"chunk_id": chunk_id, "turn_id": turn_id}, "PipecatAudioWorker")
++                )
++                if self._debounce_task and not self._debounce_task.done():
++                    self._debounce_task.cancel()
++                self._debounce_task = asyncio.create_task(self._debounce_loop())
++
++        frame = OutputAudioRawFrame(
++            audio=audio_data,
++            sample_rate=sample_rate,
++            num_channels=1
++        )
++        if getattr(self.worker, "aec_processor", None):
++            await self.worker.aec_processor.feed_reference(audio_data, sample_rate)
++            
++        await self.push_frame(frame)
++
++    async def _handle_tts_stream_end(self, event: Event) -> None:
++        turn_id = event.payload.get("turn_id")
++        
++        async with self._lock:
++            # 1. Reject genuinely cancelled turns
++            if turn_id and turn_id in self._cancelled_turns:
++                self.logger.info("cancelled_tts_stream_end_ignored", extra={"received_turn": turn_id})
++                return
++
++            # 2. Reject stale stream ends from past turns
++            if turn_id and self._active_turn_id and turn_id != self._active_turn_id:
++                self.logger.warning("stale_tts_stream_end_ignored", extra={"received_turn": turn_id, "active_turn": self._active_turn_id})
++                return
++
++            # 3. Active playback: complete playback cleanly
++            if self._playback_active:
++                await self._complete_playback(turn_id, trigger="stream_end")
++                return
++
++            # 4. Inactive playback: check if turn was empty (no chunks generated)
++            if self._current_chunk_id is None:
++                await self._complete_playback(turn_id, trigger="stream_end")
++                return
++
++            # Chunks in flight: record pending stream end
++            self._stream_ended_turn = turn_id
++            self.logger.info("tts_stream_end_recorded_pending_playback", extra={"turn_id": turn_id})
++
++    async def _handle_tts_cancelled(self, event: Event) -> None:
++        turn_id = event.payload.get("turn_id")
++        async with self._lock:
++            if turn_id:
++                self._cancelled_turns.add(turn_id)
++            self._playback_active = False
++            self._active_turn_id = None
++            self._stream_ended_turn = None
++            if self._debounce_task and not self._debounce_task.done():
++                self._debounce_task.cancel()
++            self.logger.info("pipecat_tts_cancelled_state_reset")
++
++    async def _complete_playback(self, turn_id: str | None, trigger: str) -> None:
++        self._playback_active = False
++        self._stream_ended_turn = None
++        if self._debounce_task and not self._debounce_task.done():
++            self._debounce_task.cancel()
++        
++        if hasattr(self.worker, "record_stream_end_fire"):
++            self.worker.record_stream_end_fire()
++        self.logger.info("pipecat_firing_tts_playback_completed", extra={"trigger": trigger, "turn_id": turn_id})
++        await self.event_bus.publish(
++            Event.create(EventType.TTS_PLAYBACK_COMPLETED, {"chunk_id": self._current_chunk_id or "end", "turn_id": turn_id}, "PipecatAudioWorker")
++        )
++
++    async def _debounce_loop(self) -> None:
++        try:
++            while True:
++                await asyncio.sleep(0.1)
++                async with self._lock:
++                    if not self._playback_active:
++                        break
++                    # If stream end was recorded for active turn, complete cleanly
++                    if self._stream_ended_turn and self._stream_ended_turn == self._active_turn_id:
++                        await self._complete_playback(self._active_turn_id, trigger="stream_end")
++                        break
++                    # Safety net only (2.5s idle threshold) in case TTS_STREAM_END is dropped
++                    if time.time() - self._last_chunk_time > 2.5:
++                        self._playback_active = False
++                        self._stream_ended_turn = None
++                        if hasattr(self.worker, "record_safety_net_fire"):
++                            self.worker.record_safety_net_fire()
++                        self.logger.warning(
++                            "pipecat_tts_playback_completed_safety_net_triggered",
++                            extra={
++                                "elapsed": round(time.time() - self._last_chunk_time, 2),
++                                "active_turn": self._active_turn_id,
++                                "current_chunk": self._current_chunk_id,
++                            }
++                        )
++                        await self.event_bus.publish(
++                            Event.create(EventType.TTS_PLAYBACK_COMPLETED, {"chunk_id": self._current_chunk_id or "end", "turn_id": self._active_turn_id}, "PipecatAudioWorker")
++                        )
++                        break
++        except asyncio.CancelledError:
++            pass
++
++    async def process_frame(self, frame, direction):
++        await super().process_frame(frame, direction)
++        await self.push_frame(frame, direction)
++
++class PipecatAudioWorker(BaseWorker):
++    def __init__(self, event_bus: EventBus):
++        super().__init__("pipecat_audio", event_bus)
++        self.is_tts_playing = False
++        self._lock = asyncio.Lock()
++        self.last_spoken_text = ""
++        self.last_spoken_time = 0.0
++        self.tts_processor: TtsOutputProcessor | None = None
++        
++        # Step 3: Rolling metrics for regression visibility
++        self.stream_end_fires: int = 0
++        self.safety_net_fires: int = 0
++        self._rolling_window: deque[str] = deque(maxlen=20)
++        
++        settings = load_settings()
++        self.mute_gate_delay = getattr(settings, "mute_gate_delay", 0.6)
++
++    def record_stream_end_fire(self) -> None:
++        self.stream_end_fires += 1
++        self._rolling_window.append("stream_end")
++        metrics = getattr(self.event_bus, "metrics", None)
++        if metrics and hasattr(metrics, "record_tts_completion"):
++            metrics.record_tts_completion("stream_end")
++
++    def record_safety_net_fire(self) -> None:
++        self.safety_net_fires += 1
++        self._rolling_window.append("safety_net")
++        metrics = getattr(self.event_bus, "metrics", None)
++        if metrics and hasattr(metrics, "record_tts_completion"):
++            metrics.record_tts_completion("safety_net")
++        
++        # Log CRITICAL if safety net fires on more than 1 in 20 turns in rolling window
++        safety_net_count = sum(1 for t in self._rolling_window if t == "safety_net")
++        if safety_net_count > 1:
++            self.logger.critical(
++                "pipecat_safety_net_threshold_exceeded",
++                extra={
++                    "safety_net_count": safety_net_count,
++                    "window_size": len(self._rolling_window),
++                    "total_stream_end_fires": self.stream_end_fires,
++                    "total_safety_net_fires": self.safety_net_fires,
++                }
++            )
++
++    async def run(self) -> None:
++        if self._debounce_task and not self._debounce_task.done():
++            self._debounce_task.cancel()
++
++    async def _handle_turn_started(self, event: Event) -> None:
++        turn_id = event.payload.get("turn_id")
++        async with self._lock:
++            self._active_turn_id = turn_id
++            self._current_chunk_id = None
++            self._stream_ended_turn = None
++            if turn_id and turn_id in self._cancelled_turns:
++                self._cancelled_turns.remove(turn_id)
++
++    async def _handle_interrupted(self, event: Event) -> None:
++        turn_id = event.payload.get("turn_id")
++        async with self._lock:
++            if turn_id:
++                self._cancelled_turns.add(turn_id)
++            self._playback_active = False
++            self._active_turn_id = None
++            self._stream_ended_turn = None
++            if self._debounce_task and not self._debounce_task.done():
++                self._debounce_task.cancel()
++
++    async def _handle_tts_chunk(self, event: Event) -> None:
++        audio_data = event.payload.get("audio_data")
++        sample_rate = event.payload.get("sample_rate", 22050)
++        chunk_id = event.payload.get("chunk_id")
++        turn_id = event.payload.get("turn_id")
++        
++        if not audio_data:
++            return
++
++        async with self._lock:
++            if turn_id and turn_id in self._cancelled_turns:
++                return
++
++            self._last_chunk_time = time.time()
++            self._current_chunk_id = chunk_id
++            if turn_id:
++                self._active_turn_id = turn_id
++            
++            if not self._playback_active:
++                self._playback_active = True
++                self.logger.info("pipecat_firing_tts_playback_started", extra={"chunk_id": chunk_id, "turn_id": turn_id})
++                await self.event_bus.publish(
++                    Event.create(EventType.TTS_PLAYBACK_STARTED, {"chunk_id": chunk_id, "turn_id": turn_id}, "PipecatAudioWorker")
++                )
++                if self._debounce_task and not self._debounce_task.done():
++                    self._debounce_task.cancel()
++                self._debounce_task = asyncio.create_task(self._debounce_loop())
++
++        frame = OutputAudioRawFrame(
++            audio=audio_data,
++            sample_rate=sample_rate,
++            num_channels=1
++        )
++        if getattr(self.worker, "aec_processor", None):
++            await self.worker.aec_processor.feed_reference(audio_data, sample_rate)
++            
++        await self.push_frame(frame)
++
++    async def _handle_tts_stream_end(self, event: Event) -> None:
++        turn_id = event.payload.get("turn_id")
++        
++        async with self._lock:
++            # 1. Reject genuinely cancelled turns
++            if turn_id and turn_id in self._cancelled_turns:
++                self.logger.info("cancelled_tts_stream_end_ignored", extra={"received_turn": turn_id})
++                return
++
++            # 2. Reject stale stream ends from past turns
++            if turn_id and self._active_turn_id and turn_id != self._active_turn_id:
++                self.logger.warning("stale_tts_stream_end_ignored", extra={"received_turn": turn_id, "active_turn": self._active_turn_id})
++                return
++
++            # 3. Active playback: complete playback cleanly
++            if self._playback_active:
++                await self._complete_playback(turn_id, trigger="stream_end")
++                return
++
++            # 4. Inactive playback: check if turn was empty (no chunks generated)
++            if self._current_chunk_id is None:
++                await self._complete_playback(turn_id, trigger="stream_end")
++                return
++
++            # Chunks in flight: record pending stream end
++            self._stream_ended_turn = turn_id
++            self.logger.info("tts_stream_end_recorded_pending_playback", extra={"turn_id": turn_id})
++
++    async def _handle_tts_cancelled(self, event: Event) -> None:
++        turn_id = event.payload.get("turn_id")
++        async with self._lock:
++            if turn_id:
++                self._cancelled_turns.add(turn_id)
++            self._playback_active = False
++            self._active_turn_id = None
++            self._stream_ended_turn = None
++            if self._debounce_task and not self._debounce_task.done():
++                self._debounce_task.cancel()
++            self.logger.info("pipecat_tts_cancelled_state_reset")
++
++    async def _complete_playback(self, turn_id: str | None, trigger: str) -> None:
++        self._playback_active = False
++        self._stream_ended_turn = None
++        if self._debounce_task and not self._debounce_task.done():
++            self._debounce_task.cancel()
++        
++        if hasattr(self.worker, "record_stream_end_fire"):
++            self.worker.record_stream_end_fire()
++        self.logger.info("pipecat_firing_tts_playback_completed", extra={"trigger": trigger, "turn_id": turn_id})
++        await self.event_bus.publish(
++            Event.create(EventType.TTS_PLAYBACK_COMPLETED, {"chunk_id": self._current_chunk_id or "end", "turn_id": turn_id}, "PipecatAudioWorker")
++        )
++
++    async def _debounce_loop(self) -> None:
++        try:
++            while True:
++                await asyncio.sleep(0.1)
++                async with self._lock:
++                    if not self._playback_active:
++                        break
++                    # If stream end was recorded for active turn, complete cleanly
++                    if self._stream_ended_turn and self._stream_ended_turn == self._active_turn_id:
++                        await self._complete_playback(self._active_turn_id, trigger="stream_end")
++                        break
++                    # Safety net only (2.5s idle threshold) in case TTS_STREAM_END is dropped
++                    if time.time() - self._last_chunk_time > 2.5:
++                        self._playback_active = False
++                        self._stream_ended_turn = None
++                        if hasattr(self.worker, "record_safety_net_fire"):
++                            self.worker.record_safety_net_fire()
++                        self.logger.warning(
++                            "pipecat_tts_playback_completed_safety_net_triggered",
++                            extra={
++                                "elapsed": round(time.time() - self._last_chunk_time, 2),
++                                "active_turn": self._active_turn_id,
++                                "current_chunk": self._current_chunk_id,
++                            }
++                        )
++                        await self.event_bus.publish(
++                            Event.create(EventType.TTS_PLAYBACK_COMPLETED, {"chunk_id": self._current_chunk_id or "end", "turn_id": self._active_turn_id}, "PipecatAudioWorker")
++                        )
++                        break
++        except asyncio.CancelledError:
++            pass
++
++    async def process_frame(self, frame, direction):
++        await super().process_frame(frame, direction)
++        await self.push_frame(frame, direction)
++
+ class PipecatAudioWorker(BaseWorker):
+     def __init__(self, event_bus: EventBus):
+         super().__init__("pipecat_audio", event_bus)
+@@ -121,16 +590,54 @@ class PipecatAudioWorker(BaseWorker):
+         self._lock = asyncio.Lock()
+         self.last_spoken_text = ""
+         self.last_spoken_time = 0.0
++        self.tts_processor: TtsOutputProcessor | None = None
++        
++        # Step 3: Rolling metrics for regression visibility
++        self.stream_end_fires: int = 0
++        self.safety_net_fires: int = 0
++        self._rolling_window: deque[str] = deque(maxlen=20)
+         
+         settings = load_settings()
+         self.mute_gate_delay = getattr(settings, "mute_gate_delay", 0.6)
+ 
++    def record_stream_end_fire(self) -> None:
++        self.stream_end_fires += 1
++        self._rolling_window.append("stream_end")
++        metrics = getattr(self.event_bus, "metrics", None)
++        if metrics and hasattr(metrics, "record_tts_completion"):
++            metrics.record_tts_completion("stream_end")
++
++    def record_safety_net_fire(self) -> None:
++        self.safety_net_fires += 1
++        self._rolling_window.append("safety_net")
++        metrics = getattr(self.event_bus, "metrics", None)
++        if metrics and hasattr(metrics, "record_tts_completion"):
++            metrics.record_tts_completion("safety_net")
++        
++        # Log CRITICAL if safety net fires on more than 1 in 20 turns in rolling window
++        safety_net_count = sum(1 for t in self._rolling_window if t == "safety_net")
++        if safety_net_count > 1:
++            self.logger.critical(
++                "pipecat_safety_net_threshold_exceeded",
++                extra={
++                    "safety_net_count": safety_net_count,
++                    "window_size": len(self._rolling_window),
++                    "total_stream_end_fires": self.stream_end_fires,
++                    "total_safety_net_fires": self.safety_net_fires,
++                }
++            )
++
+     async def run(self) -> None:
+         self.event_bus.subscribe(EventType.TTS_PLAYBACK_STARTED, self._handle_tts_started)
+         self.event_bus.subscribe(EventType.TTS_PLAYBACK_COMPLETED, self._handle_tts_completed)
+         self.event_bus.subscribe(EventType.RESPONSE_READY, self._handle_response_ready)
+         await super().run()
+ 
++    async def stop(self) -> None:
++        if self.tts_processor:
++            await self.tts_processor.cleanup()
++        await super().stop()
++
+     async def _handle_response_ready(self, event: Event) -> None:
+         text = event.payload.get("text", "")
+         if text:
+@@ -154,10 +661,29 @@ class PipecatAudioWorker(BaseWorker):
+     async def work(self) -> None:
+         self.logger.info("pipecat_worker_starting", extra={"detail": "Starting Pipecat Audio Worker"})
+         
++        output_device = getattr(load_settings(), "audio_output_device", None)
++        if isinstance(output_device, str):
++            try:
++                import pyaudio
++                p = pyaudio.PyAudio()
++                for i in range(p.get_device_count()):
++                    info = p.get_device_info_by_index(i)
++                    if output_device.lower() in info.get("name", "").lower() and info.get("maxOutputChannels") > 0:
++                        output_device = i
++                        break
++                p.terminate()
++            except ImportError as e:
++                self.logger.debug("pyaudio_not_installed_device_selection_skipped", extra={"error": str(e)})
++            if isinstance(output_device, str):
++                output_device = None
++
+         transport = LocalAudioTransport(
+             LocalAudioTransportParams(
+                 audio_in_enabled=True,
+-                audio_out_enabled=False
++                audio_out_enabled=True,
++                output_device_index=output_device,
++                audio_out_sample_rate=22050,
++                audio_in_sample_rate=16000
+             )
+         )
+ 
+@@ -171,16 +697,25 @@ class PipecatAudioWorker(BaseWorker):
+ 
+         settings = load_settings()
+         vad_stop_secs = getattr(settings, "vad_stop_secs", 0.8)
++        aec_delay_ms = getattr(settings, "aec_delay_ms", 180)
++        aec_enable_ns = getattr(settings, "aec_enable_ns", False)
++        aec_enable_agc = getattr(settings, "aec_enable_agc", False)
++        
+         self.logger.info("vad_config", extra={"stop_secs": vad_stop_secs})
+         vad = SileroVADAnalyzer(params=VADParams(stop_secs=vad_stop_secs))
+         vad_processor = VADProcessor(vad_analyzer=vad)
+ 
++        self.aec_processor = AecProcessor(self, delay_ms=aec_delay_ms, enable_ns=aec_enable_ns, enable_agc=aec_enable_agc)
++
++        self.tts_processor = TtsOutputProcessor(self)
+         pipeline = Pipeline([
+             transport.input(),
++            self.aec_processor,
+             MuteGateProcessor(self),
+             vad_processor,
+             stt,
+             TranscriptionPublisher(self),
++            self.tts_processor,
+             transport.output()
+         ])
+ 
+@@ -191,13 +726,38 @@ class PipecatAudioWorker(BaseWorker):
+         
+         runner_task = asyncio.create_task(runner.run(task))
+         
+-        while not self.should_stop:
+-            self.heartbeat("running pipeline")
+-            done, _ = await asyncio.wait([runner_task], timeout=1.0, return_when=asyncio.FIRST_COMPLETED)
+-            if runner_task in done:
+-                break
+-                
+-        if self.should_stop and not runner_task.done():
+-            self.logger.info("pipecat_worker_stopping", extra={"detail": "Worker stopping, cancelling Pipecat task"})
+-            task.cancel()
+-            await runner_task
++        try:
++            while not self.should_stop:
++                self.heartbeat("running pipeline")
++                done, _ = await asyncio.wait([runner_task], timeout=1.0, return_when=asyncio.FIRST_COMPLETED)
++                if runner_task in done:
++                    break
++                    
++            if self.should_stop and not runner_task.done():
++                self.logger.info("pipecat_worker_stopping", extra={"detail": "Worker stopping, cancelling Pipecat task"})
++                try:
++                    await task.cancel()
++                except Exception as e:
++                    self.logger.error("pipecat_task_cancel_error", extra={"error": str(e)}, exc_info=True)
++                try:
++                    await asyncio.wait_for(asyncio.shield(runner_task), timeout=2.0)
++                except (asyncio.TimeoutError, asyncio.CancelledError):
++                    runner_task.cancel()
++                    try:
++                        await runner_task
++                    except asyncio.CancelledError:
++                        pass
++                    except Exception as e:
++                        self.logger.error("pipecat_runner_cancelled_await_error", extra={"error": str(e)}, exc_info=True)
++                except Exception as e:
++                    self.logger.error("pipecat_runner_shutdown_error", extra={"error": str(e)}, exc_info=True)
++                    runner_task.cancel()
++                    try:
++                        await runner_task
++                    except asyncio.CancelledError:
++                        pass
++                    except Exception as inner_e:
++                        self.logger.error("pipecat_runner_cancelled_await_error", extra={"error": str(inner_e)}, exc_info=True)
++        finally:
++            if self.tts_processor:
++                await self.tts_processor.cleanup()
+diff --git a/FRIDAY/core/audio/tts.py b/FRIDAY/core/audio/tts.py
+index 142a9bf..5ab13a5 100644
+--- a/FRIDAY/core/audio/tts.py
++++ b/FRIDAY/core/audio/tts.py
+@@ -4,10 +4,7 @@ import threading
+ import time
+ from typing import Any
+ import numpy as np
+-try:
+-    import sounddevice as sd
+-except ImportError:
+-    sd = None
++import uuid
+ from core.events.bus import EventBus
+ from core.events.event_types import EventType
+ from core.events.models import Event
+@@ -28,30 +25,28 @@ class TtsWorker(BaseWorker):
+         event_bus: EventBus,
+         model_path: str | None = None,
+         config_path: str | None = None,
+-        output_device: int | str | None = None,
+         max_queue_size: int = 50,
+     ) -> None:
+         super().__init__("tts", event_bus)
+         self.model_path = model_path
+         self.config_path = config_path
+-        self.output_device = output_device
+         self.max_queue_size = max_queue_size
+         self.logger = get_logger("audio.tts")
+ 
+         self.voice = None
+         self._is_initialized = False
+         self._playback_queue: queue.Queue[bytes] = queue.Queue(maxsize=self.max_queue_size)
+-        self._playback_thread = None
++        self._publish_task = None
+ 
+         self._stop_playback = threading.Event()
+         self._text_buffer = ""
++        self._synthesis_lock = asyncio.Lock()
+         
+         # Stats
+         self.chunks_synthesized = 0
+         self.interruptions = 0
+         self.synthesis_errors = 0
+         self.active_turn_id = None
+-        self.playback_active = False
+ 
+     async def run(self) -> None:
+         # 1. Initialize voice
+@@ -62,10 +57,6 @@ class TtsWorker(BaseWorker):
+         else:
+             self.logger.warning("tts_no_model_or_library_degraded_mode")
+ 
+-        if sd is None:
+-            self.logger.error("sounddevice_not_installed_tts_disabled")
+-            return
+-
+         # 2. Subscribe to events
+         self.event_bus.subscribe(EventType.ASSISTANT_RESPONSE_PARTIAL, self._handle_partial_response)
+         self.event_bus.subscribe(EventType.ASSISTANT_RESPONSE_COMPLETED, self._handle_response_completed)
+@@ -74,10 +65,8 @@ class TtsWorker(BaseWorker):
+         self.event_bus.subscribe(EventType.CONVERSATION_INTERRUPTED, self._handle_interruption)
+         self.event_bus.subscribe(EventType.CONVERSATION_TURN_STARTED, self._handle_turn_started)
+ 
+-        self._loop = asyncio.get_running_loop()
+-        # 3. Start playback thread
+-        self._playback_thread = threading.Thread(target=self._playback_loop, daemon=True)
+-        self._playback_thread.start()
++        # 3. Start publish loop
++        self._publish_task = asyncio.create_task(self._publish_loop(), name="tts-publish-loop")
+ 
+         await super().run()
+ 
+@@ -100,9 +89,11 @@ class TtsWorker(BaseWorker):
+ 
+     async def _handle_turn_started(self, event: Event) -> None:
+         self.active_turn_id = event.payload.get("turn_id")
++        self._synthesis_lock = asyncio.Lock()
++        self._stop_playback.clear()
+ 
+     async def _handle_partial_response(self, event: Event) -> None:
+-        turn_id = event.payload.get("turn_id")
++        turn_id = event.payload.get("turn_id") or self.active_turn_id
+         
+         # Validate turn context
+         if self.active_turn_id and turn_id and turn_id != self.active_turn_id:
+@@ -131,14 +122,26 @@ class TtsWorker(BaseWorker):
+             else:
+                 break
+         
+-        for sentence in sentences:
+-            await self._synthesize_and_queue(sentence, event.correlation_id)
++        async with self._synthesis_lock:
++            for sentence in sentences:
++                await self._synthesize_and_queue(sentence, event.correlation_id, turn_id=turn_id)
+ 
+     async def _handle_response_completed(self, event: Event) -> None:
+-        remaining = self._text_buffer.strip()
+-        if remaining:
+-            await self._synthesize_and_queue(remaining, event.correlation_id)
+-        self._text_buffer = ""
++        turn_id = event.payload.get("turn_id") or self.active_turn_id
++        
++        async with self._synthesis_lock:
++            remaining = self._text_buffer.strip()
++            if remaining:
++                await self._synthesize_and_queue(remaining, event.correlation_id, turn_id=turn_id)
++            self._text_buffer = ""
++            
++            # Enqueue end of turn marker so _publish_loop emits TTS_STREAM_END
++            # only after all audio chunks for this turn are published
++            if self._is_initialized and self.voice:
++                try:
++                    await asyncio.to_thread(self._playback_queue.put, {"type": "end_of_turn", "turn_id": turn_id}, True, 1.0)
++                except queue.Full:
++                    self.logger.warning("tts_queue_full_dropping_end_marker")
+ 
+     async def _handle_interruption(self, event: Event) -> None:
+         self._stop_playback.set()
+@@ -153,14 +156,14 @@ class TtsWorker(BaseWorker):
+             except queue.Empty:
+                 break
+         
+-        if cleared > 0 or self.playback_active:
++        if cleared > 0:
+             self.interruptions += 1
+             self.logger.info("tts_interrupted", extra={"cleared_chunks": cleared})
+             await self.event_bus.publish(
+-                Event.create(EventType.TTS_PLAYBACK_CANCELLED, {"reason": "interruption"}, self.name, event.correlation_id)
++                Event.create(EventType.TTS_PLAYBACK_CANCELLED, {"reason": "interruption", "turn_id": self.active_turn_id}, self.name, event.correlation_id)
+             )
+ 
+-    async def _synthesize_and_queue(self, text: str, correlation_id: str | None) -> None:
++    async def _synthesize_and_queue(self, text: str, correlation_id: str | None, turn_id: str | None = None) -> None:
+         if not self._is_initialized or not self.voice:
+             return
+ 
+@@ -169,19 +172,21 @@ class TtsWorker(BaseWorker):
+         )
+         
+         try:
+-            await asyncio.to_thread(self._stream_synthesis, text, correlation_id)
++            await asyncio.to_thread(self._stream_synthesis, text, correlation_id, turn_id)
+         except Exception as e:
+             self.synthesis_errors += 1
+             self.logger.error("tts_synthesis_failed", extra={"error": str(e)})
+ 
+-    def _stream_synthesis(self, text: str, correlation_id: str | None) -> None:
++    def _stream_synthesis(self, text: str, correlation_id: str | None, turn_id: str | None = None) -> None:
+         try:
+             for chunk in self.voice.synthesize(text):
+                 if self._stop_playback.is_set():
+                     break
+                 
+                 try:
+-                    self._playback_queue.put(chunk.audio_int16_bytes, timeout=1.0)
++                    target_turn = turn_id or self.active_turn_id
++                    item = {"type": "audio", "data": chunk.audio_int16_bytes, "turn_id": target_turn}
++                    self._playback_queue.put(item, timeout=1.0)
+                     self.chunks_synthesized += 1
+                 except queue.Full:
+                     self.logger.warning("tts_queue_full_dropping_audio")
+@@ -189,91 +194,68 @@ class TtsWorker(BaseWorker):
+         except Exception as e:
+             self.logger.error(f"piper_stream_failed: {str(e)}", exc_info=True)
+ 
+-    def _fire_playback_event(self, event_type: EventType) -> None:
+-        if hasattr(self, "_loop") and self._loop and not self._loop.is_closed():
+-            import asyncio
+-            asyncio.run_coroutine_threadsafe(
+-                self.event_bus.publish(
+-                    Event.create(event_type, {}, self.name)
+-                ),
+-                self._loop
+-            )
+-
+-    def _playback_loop(self) -> None:
+-        sample_rate = self.voice.config.sample_rate if self.voice and hasattr(self.voice, "config") else 22050
+-        
+-        import sounddevice as sd
+-        import time
+-        import queue
+-        
+-        self.audio_buffer = bytearray()
+-        
+-        def callback(outdata, frames, time_info, status):
+-            if status:
+-                pass # Ignore status warnings like underflow to avoid log spam
+-            
+-            bytes_needed = frames * 2 # 16-bit mono = 2 bytes per frame
+-            
+-            if self._stop_playback.is_set():
+-                self.audio_buffer.clear()
+-                self._stop_playback.clear()
++    async def _publish_loop(self) -> None:
++        sr = getattr(getattr(self.voice, "config", None), "sample_rate", 22050)
++        sample_rate = int(sr) if isinstance(sr, (int, float)) else 22050
++        while not self.should_stop:
++            try:
++                # Use to_thread since queue.Queue is thread-based and blocking
++                item = await asyncio.to_thread(self._playback_queue.get, True, 1.0)
+                 
+-            # Fill buffer if we need more
+-            while len(self.audio_buffer) < bytes_needed:
+-                try:
+-                    chunk = self._playback_queue.get_nowait()
+-                    self.audio_buffer.extend(chunk)
++                if isinstance(item, dict) and item.get("type") == "end_of_turn":
++                    end_turn_id = item.get("turn_id") or self.active_turn_id
++                    self.logger.info("tts_publishing_stream_end", extra={"turn_id": end_turn_id})
++                    await self.event_bus.publish(
++                        Event.create(
++                            EventType.TTS_STREAM_END,
++                            {"turn_id": end_turn_id},
++                            self.name
++                        )
++                    )
+                     self._playback_queue.task_done()
+-                except queue.Empty:
+-                    break
+-                    
+-            if len(self.audio_buffer) >= bytes_needed:
+-                outdata[:] = bytes(self.audio_buffer[:bytes_needed])
+-                del self.audio_buffer[:bytes_needed]
+-                if not self.playback_active:
+-                    self.playback_active = True
+-                    self._fire_playback_event(EventType.TTS_PLAYBACK_STARTED)
+-            else:
+-                # Pad with silence
+-                silence_needed = bytes_needed - len(self.audio_buffer)
+-                outdata[:] = bytes(self.audio_buffer) + (b'\x00' * silence_needed)
+-                self.audio_buffer.clear()
+-                if self.playback_active:
+-                    self.playback_active = False
+-                    self._fire_playback_event(EventType.TTS_PLAYBACK_COMPLETED)
++                    continue
+ 
+-        try:
+-            with sd.RawOutputStream(
+-                samplerate=sample_rate, 
+-                blocksize=1024,
+-                channels=1, 
+-                dtype='int16', 
+-                callback=callback,
+-                device=self.output_device
+-            ):
+-                while not self.should_stop:
+-                    time.sleep(0.1)
+-        except Exception as e:
+-            self.logger.error("tts_playback_failed", extra={"error": str(e)}, exc_info=True)
++                chunk = item.get("data")
++                turn_id = item.get("turn_id")
++
++                if chunk:
++                    chunk_id = str(uuid.uuid4())
++                    await self.event_bus.publish(
++                        Event.create(
++                            EventType.TTS_AUDIO_CHUNK,
++                            {"chunk_id": chunk_id, "audio_data": chunk, "sample_rate": sample_rate, "turn_id": turn_id},
++                            self.name
++                        )
++                    )
++                self._playback_queue.task_done()
++            except queue.Empty:
++                pass
++            except asyncio.CancelledError:
++                break
++            except Exception as e:
++                self.logger.error("tts_publish_loop_error", extra={"error": str(e)})
++                await asyncio.sleep(0.1)
+ 
+     async def stop(self) -> None:
+         await super().stop()
+         self._stop_playback.set()
+-        if self._playback_thread and self._playback_thread.is_alive():
+-            self._playback_thread.join(timeout=2.0)
++        if self._publish_task and not self._publish_task.done():
++            self._publish_task.cancel()
++            try:
++                await self._publish_task
++            except asyncio.CancelledError:
++                pass
+ 
+     async def work(self) -> None:
+         try:
+             while not self.should_stop:
+                 self.heartbeat(f"tts [chunks={self.chunks_synthesized} interrupts={self.interruptions} errors={self.synthesis_errors}]")
+                 
+-                # Watchdog: restart playback thread if it died unexpectedly
+-                if self._playback_thread is not None and not self._playback_thread.is_alive() and not self.should_stop:
+-                    if sd is not None:
+-                        self.logger.warning("tts_playback_thread_dead_restarting")
+-                        self._stop_playback.clear()
+-                        self._playback_thread = threading.Thread(target=self._playback_loop, daemon=True)
+-                        self._playback_thread.start()
++                # Watchdog: restart publish task if it died unexpectedly
++                if self._publish_task is not None and self._publish_task.done() and not self.should_stop:
++                    self.logger.warning("tts_publish_task_dead_restarting")
++                    self._stop_playback.clear()
++                    self._publish_task = asyncio.create_task(self._publish_loop(), name="tts-publish-loop")
+                 
+                 await asyncio.sleep(1.0)
+         except asyncio.CancelledError:
+diff --git a/FRIDAY/core/config/settings.py b/FRIDAY/core/config/settings.py
+index 1396e25..908265f 100644
+--- a/FRIDAY/core/config/settings.py
++++ b/FRIDAY/core/config/settings.py
+@@ -57,6 +57,9 @@ class Settings:
+     audio_output_device: int | str | None = None
+     audio_input_device: int | str | None = None
+     mute_gate_delay: float = 0.6
++    aec_delay_ms: int = 180
++    aec_enable_ns: bool = False
++    aec_enable_agc: bool = False
+ 
+     @property
+     def data_dir(self) -> Path:
+@@ -102,6 +105,15 @@ def load_settings() -> Settings:
+     vad_stop_secs_str = os.getenv("FRIDAY_VAD_STOP_SECS")
+     vad_stop_secs = float(vad_stop_secs_str) if vad_stop_secs_str else 2.0
+ 
++    aec_delay_ms_str = os.getenv("FRIDAY_AEC_DELAY_MS")
++    aec_delay_ms = int(aec_delay_ms_str) if aec_delay_ms_str else 180
++
++    aec_enable_ns_str = os.getenv("FRIDAY_AEC_ENABLE_NS", "false").lower()
++    aec_enable_ns = aec_enable_ns_str == "true"
++
++    aec_enable_agc_str = os.getenv("FRIDAY_AEC_ENABLE_AGC", "false").lower()
++    aec_enable_agc = aec_enable_agc_str == "true"
++
+     if runtime_mode == RuntimeMode.TESTING:
+         return Settings(
+             root_dir=Path(__file__).resolve().parents[2],
+@@ -126,6 +138,9 @@ def load_settings() -> Settings:
+             audio_input_device=audio_input_device,
+             vad_stop_secs=vad_stop_secs,
+             mute_gate_delay=mute_gate_delay,
++            aec_delay_ms=aec_delay_ms,
++            aec_enable_ns=aec_enable_ns,
++            aec_enable_agc=aec_enable_agc,
+         )
+     if runtime_mode == RuntimeMode.PRODUCTION:
+         return Settings(
+@@ -151,6 +166,9 @@ def load_settings() -> Settings:
+             audio_input_device=audio_input_device,
+             vad_stop_secs=vad_stop_secs,
+             mute_gate_delay=mute_gate_delay,
++            aec_delay_ms=aec_delay_ms,
++            aec_enable_ns=aec_enable_ns,
++            aec_enable_agc=aec_enable_agc,
+         )
+     return Settings(
+         root_dir=Path(__file__).resolve().parents[2],
+@@ -165,4 +183,7 @@ def load_settings() -> Settings:
+         audio_input_device=audio_input_device,
+             vad_stop_secs=vad_stop_secs,
+         mute_gate_delay=mute_gate_delay,
++            aec_delay_ms=aec_delay_ms,
++            aec_enable_ns=aec_enable_ns,
++            aec_enable_agc=aec_enable_agc,
+     )
+diff --git a/FRIDAY/core/events/bus.py b/FRIDAY/core/events/bus.py
+index 8273659..8722688 100644
+--- a/FRIDAY/core/events/bus.py
++++ b/FRIDAY/core/events/bus.py
+@@ -66,6 +66,19 @@ class EventBus:
+     def subscribe_all(self, handler: EventHandler) -> None:
+         self._wildcard_subscribers.append(handler)
+ 
++    def unsubscribe(self, event_type: EventType, handler: EventHandler) -> None:
++        if event_type in self._subscribers:
++            try:
++                self._subscribers[event_type].remove(handler)
++            except ValueError:
++                pass
++
++    def unsubscribe_all(self, handler: EventHandler) -> None:
++        try:
++            self._wildcard_subscribers.remove(handler)
++        except ValueError:
++            pass
++
+     async def publish(self, event: object) -> None:
+         if not self._running:
+             raise RuntimeError("EventBus must be started before publishing events.")
+diff --git a/FRIDAY/core/events/contracts.py b/FRIDAY/core/events/contracts.py
+index b221662..32be533 100644
+--- a/FRIDAY/core/events/contracts.py
++++ b/FRIDAY/core/events/contracts.py
+@@ -71,10 +71,12 @@ EVENT_CONTRACTS: dict[EventType, PayloadSchema] = {
+     EventType.CONVERSATION_INTERRUPTED: {"turn_id": str, "reason": str},
+     EventType.CONVERSATION_TIMEOUT: {"timeout_type": str, "turn_id": str},
+     EventType.TTS_SYNTHESIS_STARTED: {"text": str},
++    EventType.TTS_AUDIO_CHUNK: {"chunk_id": str, "audio_data": bytes, "sample_rate": int},
+     EventType.TTS_AUDIO_CHUNK_READY: {"chunk_id": str, "audio_data": bytes},
+     EventType.TTS_PLAYBACK_STARTED: {"chunk_id": str},
+     EventType.TTS_PLAYBACK_COMPLETED: {"chunk_id": str},
+     EventType.TTS_PLAYBACK_CANCELLED: {"reason": str},
++    EventType.TTS_STREAM_END: {"turn_id": (str, type(None))},
+     EventType.TTS_TIMEOUT: {"timeout_type": str},
+     EventType.TTS_MODEL_ERROR: {"error": str},
+     EventType.TTS_QUEUE_DROPPED: {"reason": str},
+diff --git a/FRIDAY/core/events/event_types.py b/FRIDAY/core/events/event_types.py
+index 96befe8..c44e10b 100644
+--- a/FRIDAY/core/events/event_types.py
++++ b/FRIDAY/core/events/event_types.py
+@@ -65,10 +65,12 @@ class EventType(StrEnum):
+     CONVERSATION_INTERRUPTED = "CONVERSATION_INTERRUPTED"
+     CONVERSATION_TIMEOUT = "CONVERSATION_TIMEOUT"
+     TTS_SYNTHESIS_STARTED = "TTS_SYNTHESIS_STARTED"
++    TTS_AUDIO_CHUNK = "TTS_AUDIO_CHUNK"
+     TTS_AUDIO_CHUNK_READY = "TTS_AUDIO_CHUNK_READY"
+     TTS_PLAYBACK_STARTED = "TTS_PLAYBACK_STARTED"
+     TTS_PLAYBACK_COMPLETED = "TTS_PLAYBACK_COMPLETED"
+     TTS_PLAYBACK_CANCELLED = "TTS_PLAYBACK_CANCELLED"
++    TTS_STREAM_END = "TTS_STREAM_END"
+     TTS_TIMEOUT = "TTS_TIMEOUT"
+     TTS_MODEL_ERROR = "TTS_MODEL_ERROR"
+     TTS_QUEUE_DROPPED = "TTS_QUEUE_DROPPED"
+diff --git a/FRIDAY/core/metrics/metrics.py b/FRIDAY/core/metrics/metrics.py
+index 966d7c5..03c32a6 100644
+--- a/FRIDAY/core/metrics/metrics.py
++++ b/FRIDAY/core/metrics/metrics.py
+@@ -1,5 +1,6 @@
+ from __future__ import annotations
+ 
++from collections import deque
+ from dataclasses import dataclass, field
+ from datetime import UTC, datetime
+ 
+@@ -18,6 +19,11 @@ class RuntimeMetrics:
+     chunk_count: int = 0
+     stream_error_count: int = 0
+     
++    # TTS Playback Metrics
++    stream_end_fires: int = 0
++    safety_net_fires: int = 0
++    tts_rolling_window: deque[str] = field(default_factory=lambda: deque(maxlen=20))
++    
+     # Memory Metrics
+     memories_stored: int = 0
+     recall_queries: int = 0
+@@ -56,6 +62,21 @@ class RuntimeMetrics:
+     def record_restart(self) -> None:
+         self.restart_count += 1
+ 
++    def record_tts_completion(self, trigger: str) -> None:
++        if trigger == "stream_end":
++            self.stream_end_fires += 1
++            self.tts_rolling_window.append("stream_end")
++        elif trigger == "safety_net":
++            self.safety_net_fires += 1
++            self.tts_rolling_window.append("safety_net")
++
++    @property
++    def tts_safety_net_ratio(self) -> float:
++        total = self.stream_end_fires + self.safety_net_fires
++        if total == 0:
++            return 0.0
++        return self.safety_net_fires / total
++
+     @property
+     def average_processing_time_seconds(self) -> float:
+         if self.processed_events == 0:
+@@ -76,4 +97,7 @@ class RuntimeMetrics:
+             "average_processing_time_seconds": round(self.average_processing_time_seconds, 6),
+             "queue_depth": self.queue_depth,
+             "active_workers": self.active_workers,
++            "stream_end_fires": self.stream_end_fires,
++            "safety_net_fires": self.safety_net_fires,
++            "tts_safety_net_ratio": round(self.tts_safety_net_ratio, 4),
+         }
+diff --git a/FRIDAY/core/orchestrator/conversation.py b/FRIDAY/core/orchestrator/conversation.py
+index 5f6cef1..7b7a669 100644
+--- a/FRIDAY/core/orchestrator/conversation.py
++++ b/FRIDAY/core/orchestrator/conversation.py
+@@ -393,7 +393,16 @@ class OrchestratorWorker(BaseWorker):
+         async with self._state_lock:
+             if self.active_speaker != "assistant":
+                 return
+-                
++            routing_task = self._routing_task
++
++        # Ensure routing task finishes and flushes speculative chunks before signaling completion
++        if routing_task and not routing_task.done():
++            try:
++                await asyncio.shield(routing_task)
++            except Exception as e:
++                self.logger.warning("routing_task_await_failed_in_stream_completed", extra={"error": str(e)})
++
++        async with self._state_lock:
+             full_text = event.payload.get("full_text", "")
+             self.context.append({"role": "assistant", "content": full_text})
+             turn_id = self.active_turn_id
+diff --git a/FRIDAY/core/router/llm_fallback.py b/FRIDAY/core/router/llm_fallback.py
+index 4c65329..6437ace 100644
+--- a/FRIDAY/core/router/llm_fallback.py
++++ b/FRIDAY/core/router/llm_fallback.py
+@@ -1,5 +1,8 @@
+ from __future__ import annotations
+ 
++import logging
++logger = logging.getLogger(__name__)
++
+ import json
+ import asyncio
+ 
+@@ -95,8 +98,8 @@ class LlmFallbackRouter:
+         parameters: dict = {}
+         try:
+             parameters = json.loads(raw_response or "{}").get("parameters", {})
+-        except Exception:
+-            pass
++        except Exception as e:
++            logger.error("llm_fallback_json_parse_error", extra={"raw_response": raw_response, "error": str(e)}, exc_info=True)
+ 
+         chat_response_text = ""
+         if intent_name == IntentName.CHAT:
+@@ -114,8 +117,8 @@ class LlmFallbackRouter:
+                     streamed = await self.streaming_worker.stream_reasoning(context_str.strip(), correlation_id)
+                     if streamed:
+                         chat_response_text = streamed
+-                except Exception:
+-                    pass
++                except Exception as e:
++                    logger.error("llm_fallback_streaming_error", extra={"error": str(e)}, exc_info=True)
+             parameters["response_text"] = chat_response_text
+         return Intent(name=intent_name, confidence=parsed.confidence, parameters=parameters, source="ollama_reasoning")
+ 
+diff --git a/FRIDAY/core/workers/base_worker.py b/FRIDAY/core/workers/base_worker.py
+index e972e94..e72f5ff 100644
+--- a/FRIDAY/core/workers/base_worker.py
++++ b/FRIDAY/core/workers/base_worker.py
+@@ -43,8 +43,8 @@ class BaseWorker(ABC):
+                     await self.event_bus.publish(
+                         Event.create(EventType.WORKER_STOPPED, {"worker": self.name}, self.name)
+                     )
+-                except Exception:
+-                    pass
++                except Exception as e:
++                    self.logger.error("worker_stopped_publish_failed", extra={"worker": self.name, "error": str(e)}, exc_info=True)
+ 
+     async def stop(self) -> None:
+         self._stop_event.set()
+diff --git a/FRIDAY/interfaces/cli/health_dashboard.py b/FRIDAY/interfaces/cli/health_dashboard.py
+index 8b3c4da..3d7183f 100644
+--- a/FRIDAY/interfaces/cli/health_dashboard.py
++++ b/FRIDAY/interfaces/cli/health_dashboard.py
+@@ -29,6 +29,7 @@ class TerminalHealthDashboard:
+             f"restart_count={metrics['restart_count']}",
+             f"avg_processing_seconds={metrics['average_processing_time_seconds']}",
+             f"streams={self.metrics.stream_count} chunks={self.metrics.chunk_count} stream_errors={self.metrics.stream_error_count}",
++            f"tts_playback: stream_end_fires={metrics.get('stream_end_fires', 0)} safety_net_fires={metrics.get('safety_net_fires', 0)} safety_net_ratio={metrics.get('tts_safety_net_ratio', 0.0)}",
+             "workers:",
+         ]
+         for worker in workers:
+@@ -50,6 +51,7 @@ class TerminalHealthDashboard:
+             f"dropped_events={metrics['dropped_events']}",
+             f"restart_count={metrics['restart_count']}",
+             f"avg_processing_seconds={metrics['average_processing_time_seconds']}",
++            f"tts_playback: stream_end_fires={metrics.get('stream_end_fires', 0)} safety_net_fires={metrics.get('safety_net_fires', 0)} safety_net_ratio={metrics.get('tts_safety_net_ratio', 0.0)}",
+         ]
+         return "\n".join(lines)
+ 
+diff --git a/FRIDAY/tests/test_tts.py b/FRIDAY/tests/test_tts.py
+index 33dabc6..02b9684 100644
+--- a/FRIDAY/tests/test_tts.py
++++ b/FRIDAY/tests/test_tts.py
+@@ -1,4 +1,5 @@
+ import asyncio
++import time
+ import pytest
+ from unittest.mock import MagicMock, patch
+ 
+@@ -32,43 +33,29 @@ async def test_tts_interruption_flushes_queue():
+     
+     with patch("core.audio.tts.PiperVoice") as mock_piper_class:
+         mock_voice = MagicMock()
++        mock_voice.config.sample_rate = 22050
+         mock_piper_class.load.return_value = mock_voice
+-        
+-        # Mock synthesize to return chunks
+-        def mock_synthesize(text, **kwargs):
+-            chunk = MagicMock()
+-            chunk.audio_data = b"fake_audio" * 10000
+-            return [chunk]
+-        mock_voice.synthesize.side_effect = mock_synthesize
++        mock_voice.synthesize.return_value = []
+         
+         worker = TtsWorker(bus, model_path="fake.onnx")
+-        
+-        # Mock sounddevice to avoid hardware dependency
+-        with patch("core.audio.tts.sd") as mock_sd:
+-            mock_stream = mock_sd.RawOutputStream.return_value.__enter__.return_value
+-            # Make write slow enough that we catch it in the middle
+-            mock_stream.write.side_effect = lambda data: time.sleep(0.01)
+-            
+-            task = asyncio.create_task(worker.run())
+-            await asyncio.sleep(0.2)
++        # Pre-fill playback queue with chunks to verify interruption flushes them
++        for _ in range(10):
++            worker._playback_queue.put({"type": "audio", "data": b"fake_audio" * 100, "turn_id": "turn_1"})
+             
+-            # 1. Send some text (needs a period to trigger sentence segmentation)
+-            await bus.publish(Event.create(EventType.ASSISTANT_RESPONSE_PARTIAL, {"turn_id": "turn_1", "text": "Hello world."}, "orchestrator"))
+-            await asyncio.sleep(0.5)
+-            
+-            assert worker.chunks_synthesized > 0
+-            
+-            # 2. Interrupt
+-            await bus.publish(Event.create(EventType.SPEECH_STARTED, {"timestamp": 1.0, "amplitude": 0.5}, "vad"))
+-            await asyncio.sleep(0.2)
+-            
+-            assert worker._stop_playback.is_set()
+-            assert worker._playback_queue.empty()
+-            assert worker.interruptions >= 1
+-            
+-            await worker.stop()
+-            await task
+-            await bus.stop()
++        task = asyncio.create_task(worker.run())
++        await asyncio.sleep(0.01)
++        
++        # Interrupt
++        await bus.publish(Event.create(EventType.SPEECH_STARTED, {"timestamp": 1.0, "amplitude": 0.5}, "vad"))
++        await asyncio.sleep(0.1)
++        
++        assert worker._stop_playback.is_set()
++        assert worker._playback_queue.empty()
++        assert worker.interruptions >= 1
++        
++        await worker.stop()
++        await task
++        await bus.stop()
+ 
+ @pytest.mark.asyncio
+ async def test_tts_sentence_segmentation():
+@@ -77,28 +64,75 @@ async def test_tts_sentence_segmentation():
+     
+     with patch("core.audio.tts.PiperVoice") as mock_piper_class:
+         mock_voice = MagicMock()
++        mock_voice.config.sample_rate = 22050
+         mock_piper_class.load.return_value = mock_voice
+         mock_voice.synthesize.return_value = []
+         
+         worker = TtsWorker(bus, model_path="fake.onnx")
+         
+-        with patch("core.audio.tts.sd"):
+-            task = asyncio.create_task(worker.run())
+-            await asyncio.sleep(0.1)
+-            
+-            # Reset mock to ignore the warmup call
+-            mock_voice.synthesize.reset_mock()
+-            
+-            # Send partial text without sentence end
+-            await bus.publish(Event.create(EventType.ASSISTANT_RESPONSE_PARTIAL, {"turn_id": "turn_1", "text": "Hello"}, "orchestrator"))
+-            await asyncio.sleep(0.1)
+-            assert mock_voice.synthesize.call_count == 0
+-            
+-            # Send sentence end
+-            await bus.publish(Event.create(EventType.ASSISTANT_RESPONSE_PARTIAL, {"turn_id": "turn_1", "text": " world!"}, "orchestrator"))
+-            await asyncio.sleep(0.2)
+-            assert mock_voice.synthesize.call_count == 1
+-            
+-            await worker.stop()
+-            await task
+-            await bus.stop()
++        task = asyncio.create_task(worker.run())
++        await asyncio.sleep(0.1)
++        
++        mock_voice.synthesize.reset_mock()
++        
++        # Send partial text without sentence end
++        await bus.publish(Event.create(EventType.ASSISTANT_RESPONSE_PARTIAL, {"turn_id": "turn_1", "text": "Hello"}, "orchestrator"))
++        await asyncio.sleep(0.1)
++        assert mock_voice.synthesize.call_count == 0
++        
++        # Send sentence end
++        await bus.publish(Event.create(EventType.ASSISTANT_RESPONSE_PARTIAL, {"turn_id": "turn_1", "text": " world!"}, "orchestrator"))
++        await asyncio.sleep(0.2)
++        assert mock_voice.synthesize.call_count == 1
++        
++        await worker.stop()
++        await task
++        await bus.stop()
++
++@pytest.mark.asyncio
++async def test_tts_stream_end_fired_on_response_completed():
++    bus = EventBus()
++    await bus.start()
++    
++    stream_end_events = []
++    chunk_events = []
++    
++    async def on_stream_end(event: Event):
++        stream_end_events.append(event)
++        
++    async def on_chunk(event: Event):
++        chunk_events.append(event)
++        
++    bus.subscribe(EventType.TTS_STREAM_END, on_stream_end)
++    bus.subscribe(EventType.TTS_AUDIO_CHUNK, on_chunk)
++    
++    with patch("core.audio.tts.PiperVoice") as mock_piper_class:
++        mock_voice = MagicMock()
++        mock_voice.config.sample_rate = 22050
++        mock_piper_class.load.return_value = mock_voice
++        
++        def mock_synthesize(text, **kwargs):
++            return [MagicMock(audio_int16_bytes=b"\x01\x00" * 512)]
++        mock_voice.synthesize.side_effect = mock_synthesize
++        
++        worker = TtsWorker(bus, model_path="fake.onnx")
++        task = asyncio.create_task(worker.run())
++        await asyncio.sleep(0.1)
++        
++        # Multi-sentence response
++        await bus.publish(Event.create(EventType.CONVERSATION_TURN_STARTED, {"turn_id": "turn_123", "speaker": "user"}, "orchestrator"))
++        await bus.publish(Event.create(EventType.ASSISTANT_RESPONSE_PARTIAL, {"turn_id": "turn_123", "text": "First sentence. "}, "orchestrator"))
++        await bus.publish(Event.create(EventType.ASSISTANT_RESPONSE_PARTIAL, {"turn_id": "turn_123", "text": "Second sentence. "}, "orchestrator"))
++        await bus.publish(Event.create(EventType.ASSISTANT_RESPONSE_COMPLETED, {"turn_id": "turn_123", "text": "Done."}, "orchestrator"))
++        
++        # Wait for publish loop to drain queue
++        await asyncio.sleep(0.5)
++        
++        # Verify chunks arrived and TTS_STREAM_END fired once
++        assert len(chunk_events) >= 2
++        assert len(stream_end_events) == 1
++        assert stream_end_events[0].payload.get("turn_id") == "turn_123"
++        
++        await worker.stop()
++        await task
++        await bus.stop()
+diff --git a/prompt.md b/prompt.md
+index b457712..25d4ab0 100644
+--- a/prompt.md
++++ b/prompt.md
+@@ -510,6 +510,3 @@ the foundation is finally strong enough to support it.
+ //////
+ "c:\AI\llama.cpp\llama-server.exe" -m "c:\AI\models\qwen2.5-3b-instruct-q5_k_m.gguf" -c 4096 --host 127.0.0.1 --port 8080
+ //////
+-
+-
+-

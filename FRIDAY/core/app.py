@@ -108,7 +108,6 @@ class FridayApp:
             self.event_bus,
             model_path=self.settings.tts_model_path,
             config_path=self.settings.tts_config_path,
-            output_device=self.settings.audio_output_device,
         )
         
         self.supervisor = WorkerSupervisor(

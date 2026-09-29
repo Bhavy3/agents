@@ -1,0 +1,145 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.0.3, pluggy-1.6.0
+rootdir: C:\Users\IQ\OneDrive\Music\Documents\padas 1\agents\agents\FRIDAY
+configfile: pytest.ini
+plugins: anyio-4.13.0, asyncio-1.3.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 116 items / 4 errors
+
+=================================== ERRORS ====================================
+_________________ ERROR collecting scratch/test_full_chain.py _________________
+scratch\test_full_chain.py:35: in <module>
+    asyncio.run(test())
+C:\Users\IQ\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+C:\Users\IQ\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\IQ\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+scratch\test_full_chain.py:29: in test
+    tts.should_stop = True
+    ^^^^^^^^^^^^^^^
+E   AttributeError: property 'should_stop' of 'TtsWorker' object has no setter
+------------------------------- Captured stdout -------------------------------
+Sending STT_FINAL_TRANSCRIPT to Orchestrator...
+
+
+[DIAGNOSTIC] _handle_final_transcript invoked! text='hello'
+
+
+[DIAGNOSTIC] About to call intent_router.route().
+  router_instructions type: <class 'str'>, len: 256
+  chat_instructions type: <class 'str'>, len: 256
+
+
+[DIAGNOSTIC] _route_and_execute THREW EXCEPTION: AttributeError("'NoneType' object has no attribute 'route'")
+TTS active_turn_id: f977b164
+TTS text_buffer: 
+------------------------------- Captured stderr -------------------------------
+Traceback (most recent call last):
+  File "C:\Users\IQ\OneDrive\Music\Documents\padas 1\agents\agents\FRIDAY\core\orchestrator\conversation.py", line 272, in _route_and_execute
+    intent = await self.intent_router.route(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'route'
+______________ ERROR collecting scratch/test_pipecat_pipeline.py ______________
+C:\Users\IQ\AppData\Local\Programs\Python\Python312\Lib\importlib\__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+C:\Users\IQ\AppData\Local\Programs\Python\Python312\Lib\site-packages\_pytest\assertion\rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+C:\Users\IQ\OneDrive\Music\Documents\bhavy\padas 1\agents\agents\FRIDAY\scratch\test_pipecat_pipeline.py:91: in <module>
+    ???
+C:\Users\IQ\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+C:\Users\IQ\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\IQ\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+C:\Users\IQ\OneDrive\Music\Documents\bhavy\padas 1\agents\agents\FRIDAY\scratch\test_pipecat_pipeline.py:72: in test_pipeline
+    ???
+E   TypeError: TranscriptionPublisher.__init__() takes 2 positional arguments but 3 were given
+------------------------------- Captured stderr -------------------------------
+2026-09-19 12:22:17.956 | DEBUG    | pipecat.services.whisper.stt:_load:334 - Loading Whisper model...
+2026-09-19 12:22:19.739 | DEBUG    | pipecat.services.whisper.stt:_load:339 - Loaded Whisper model
+2026-09-19 12:22:19.741 | DEBUG    | pipecat.audio.vad.silero:__init__:147 - Loading Silero VAD model...
+2026-09-19 12:22:19.909 | DEBUG    | pipecat.audio.vad.silero:__init__:169 - Loaded Silero VAD
+__________________ ERROR collecting scratch/test_tts_bug.py ___________________
+scratch\test_tts_bug.py:40: in <module>
+    asyncio.run(test())
+C:\Users\IQ\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+C:\Users\IQ\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\IQ\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+scratch\test_tts_bug.py:34: in test
+    print(f"Is playback active? {tts.playback_active}")
+                                 ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'TtsWorker' object has no attribute 'playback_active'
+------------------------------- Captured stdout -------------------------------
+
+--- SIMULATING EVENT CHAIN ---
+________________ ERROR collecting scratch/test_tts_turn_id.py _________________
+scratch\test_tts_turn_id.py:37: in <module>
+    asyncio.run(test())
+C:\Users\IQ\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+C:\Users\IQ\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\IQ\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+scratch\test_tts_turn_id.py:33: in test
+    tts.should_stop = True
+    ^^^^^^^^^^^^^^^
+E   AttributeError: property 'should_stop' of 'TtsWorker' object has no setter
+------------------------------- Captured stdout -------------------------------
+Publishing CONVERSATION_TURN_STARTED
+TTS active_turn_id: test_123
+Publishing ASSISTANT_RESPONSE_PARTIAL
+TTS text_buffer: 
+============================== warnings summary ===============================
+..\..\..\..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\site-packages\pipecat\audio\utils.py:14
+  C:\Users\IQ\AppData\Local\Programs\Python\Python312\Lib\site-packages\pipecat\audio\utils.py:14: DeprecationWarning: 'audioop' is deprecated and slated for removal in Python 3.13
+    import audioop
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+ERROR scratch/test_full_chain.py - AttributeError: property 'should_stop' of ...
+ERROR scratch/test_pipecat_pipeline.py - TypeError: TranscriptionPublisher.__...
+ERROR scratch/test_tts_bug.py - AttributeError: 'TtsWorker' object has no att...
+ERROR scratch/test_tts_turn_id.py - AttributeError: property 'should_stop' of...
+!!!!!!!!!!!!!!!!!!! Interrupted: 4 errors during collection !!!!!!!!!!!!!!!!!!!
+======================= 3 warnings, 4 errors in 11.22s ========================
+pytest : sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+At line:1 char:1
++ pytest > scratch_pytest_full.txt 2>&1
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (sys:1: Deprecat...ule__ attribute:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

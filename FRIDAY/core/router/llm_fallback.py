@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger(__name__)
+
 import json
 import asyncio
 
@@ -95,8 +98,8 @@ class LlmFallbackRouter:
         parameters: dict = {}
         try:
             parameters = json.loads(raw_response or "{}").get("parameters", {})
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error("llm_fallback_json_parse_error", extra={"raw_response": raw_response, "error": str(e)}, exc_info=True)
 
         chat_response_text = ""
         if intent_name == IntentName.CHAT:
@@ -114,8 +117,8 @@ class LlmFallbackRouter:
                     streamed = await self.streaming_worker.stream_reasoning(context_str.strip(), correlation_id)
                     if streamed:
                         chat_response_text = streamed
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error("llm_fallback_streaming_error", extra={"error": str(e)}, exc_info=True)
             parameters["response_text"] = chat_response_text
         return Intent(name=intent_name, confidence=parsed.confidence, parameters=parameters, source="ollama_reasoning")
 

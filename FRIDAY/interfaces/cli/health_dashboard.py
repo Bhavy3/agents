@@ -29,6 +29,7 @@ class TerminalHealthDashboard:
             f"restart_count={metrics['restart_count']}",
             f"avg_processing_seconds={metrics['average_processing_time_seconds']}",
             f"streams={self.metrics.stream_count} chunks={self.metrics.chunk_count} stream_errors={self.metrics.stream_error_count}",
+            f"tts_playback: stream_end_fires={metrics.get('stream_end_fires', 0)} safety_net_fires={metrics.get('safety_net_fires', 0)} safety_net_ratio={metrics.get('tts_safety_net_ratio', 0.0)}",
             "workers:",
         ]
         for worker in workers:
@@ -50,6 +51,7 @@ class TerminalHealthDashboard:
             f"dropped_events={metrics['dropped_events']}",
             f"restart_count={metrics['restart_count']}",
             f"avg_processing_seconds={metrics['average_processing_time_seconds']}",
+            f"tts_playback: stream_end_fires={metrics.get('stream_end_fires', 0)} safety_net_fires={metrics.get('safety_net_fires', 0)} safety_net_ratio={metrics.get('tts_safety_net_ratio', 0.0)}",
         ]
         return "\n".join(lines)
 

@@ -43,8 +43,8 @@ class BaseWorker(ABC):
                     await self.event_bus.publish(
                         Event.create(EventType.WORKER_STOPPED, {"worker": self.name}, self.name)
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.error("worker_stopped_publish_failed", extra={"worker": self.name, "error": str(e)}, exc_info=True)
 
     async def stop(self) -> None:
         self._stop_event.set()

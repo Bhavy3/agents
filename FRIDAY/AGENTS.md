@@ -1,20 +1,28 @@
-Good news: the conversation itself worked correctly - real audio played multiple
-times, and the semantic self-feedback filter caught and correctly dropped one echo
-("Understood.") instead of looping. Both defense layers are functioning.
+# VERIFY: Does AecProcessor.cleanup() Actually Exist?
 
-One remaining issue: a RuntimeError during Pa_Terminate happens on shutdown (Ctrl+C)
-- this is the continuously-open output stream not being cleanly closed before the
-asyncio event loop tears down. This doesn't affect the live conversation, only
-happens on exit.
+## Skills Active
+Ponytail — active. ECC — active.
 
-Fix: ensure TtsWorker's output stream is explicitly stopped and closed in a proper
-shutdown/cleanup method BEFORE the event loop closes, rather than relying on
-sounddevice's atexit handler to clean it up after the loop is already gone. Add
-this to whatever shutdown sequence FRIDAY already has for other workers.
+The diff shown only adds `await self.aec_processor.cleanup()` to the
+worker's `finally` block — it does NOT show `AecProcessor` gaining a
+`cleanup()` method itself. `TtsOutputProcessor.cleanup()` already existed
+from earlier work, but nothing shown defines one on `AecProcessor`.
 
-Also: reduce/remove the "TTS DEBUG: received chunk" WARNING-level spam - we
-temporarily elevated it for visibility, but now that we've confirmed the fix works,
-downgrade it back to DEBUG or remove it, the terminal is very noisy again.
+## Required
+1. Confirm: does `AecProcessor` currently have a `cleanup()` method? Show
+   its exact current source. If it doesn't exist, this new call will raise
+   `AttributeError` the next time the worker shuts down or restarts —
+   which would ironically crash the shutdown path meant to fix the leak.
+2. If missing, add it now: it must cancel `_feeder_task` (the actual
+   asyncio task doing the leaking, per the earlier "dangling tasks"
+   warning — confirm the exact attribute name matches what's really used,
+   don't assume `_feeder_task` if the real name differs) and unsubscribe
+   any event bus handlers `AecProcessor` registered, mirroring
+   `TtsOutputProcessor.cleanup()`'s pattern.
+3. Show the full diff for this addition.
+4. Re-run full pytest, confirm 112 still passes.
+5. Then do a real test: trigger at least one supervisor restart (or the
+   idle-timeout path if you keep it for a quick check) and confirm no
+   AttributeError appears and no dangling-task warning appears afterward.
 
-Verify: run main.py, have a real conversation, and this time exit cleanly (type
-'exit' if that's supported, or confirm Ctrl+C no longer throws that traceback).
+Once confirmed, the user's hardware idle-timeout test is good to go.

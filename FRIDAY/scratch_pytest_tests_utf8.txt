@@ -1,0 +1,29 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.0.3, pluggy-1.6.0
+rootdir: C:\Users\IQ\OneDrive\Music\Documents\padas 1\agents\agents\FRIDAY
+configfile: pytest.ini
+plugins: anyio-4.13.0, asyncio-1.3.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 109 items
+
+tests\hard_concurrency_test.py .                                         [  0%]
+tests\test_aec.py .....                                                  [  5%]
+tests\test_api.py ..                                                     [  7%]
+tests\test_api_bytes.py .                                                [  8%]
+tests\test_attention_continuity.py ...                                   [ 11%]
+tests\test_audio.py ....                                                 [ 14%]
+tests\test_cognition.py ...                                              [ 17%]
+tests\test_context_echo.py ..                                            [ 19%]
+tests\test_contracts.py ...                                              [ 22%]
+tests\test_diagnostics.py ....                                           [ 25%]
+tests\test_events.py .......                                             [ 32%]
+tests\test_hinting.py .                                                  [ 33%]
+tests\test_llm.py ......                                                 [ 38%]
+tests\test_memory.py ...                                                 [ 41%]
+tests\test_orchestrator.py ....                                          [ 44%]
+tests\test_personality.py .....                                          [ 49%]
+tests\test_presence_sync.py ....                                         [ 53%]
+tests\test_router.py .                                                   [ 54%]
+tests\test_stability.py ...                                              [ 56%]
+tests\test_streaming.py ....                                             [ 60%]
+tests\test_streaming_coherence.py ..                                     [ 62%]

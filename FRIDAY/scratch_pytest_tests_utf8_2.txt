@@ -1,0 +1,61 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.0.3, pluggy-1.6.0
+rootdir: C:\Users\IQ\OneDrive\Music\Documents\padas 1\agents\agents\FRIDAY
+configfile: pytest.ini
+plugins: anyio-4.13.0, asyncio-1.3.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 109 items
+
+tests\hard_concurrency_test.py .                                         [  0%]
+tests\test_aec.py .....                                                  [  5%]
+tests\test_api.py ..                                                     [  7%]
+tests\test_api_bytes.py .                                                [  8%]
+tests\test_attention_continuity.py ...                                   [ 11%]
+tests\test_audio.py ....                                                 [ 14%]
+tests\test_cognition.py ...                                              [ 17%]
+tests\test_context_echo.py ..                                            [ 19%]
+tests\test_contracts.py ...                                              [ 22%]
+tests\test_diagnostics.py ....                                           [ 25%]
+tests\test_events.py .......                                             [ 32%]
+tests\test_hinting.py .                                                  [ 33%]
+tests\test_llm.py ......                                                 [ 38%]
+tests\test_memory.py ...                                                 [ 41%]
+tests\test_orchestrator.py ....                                          [ 44%]
+tests\test_personality.py .....                                          [ 49%]
+tests\test_presence_sync.py ....                                         [ 53%]
+tests\test_router.py .                                                   [ 54%]
+tests\test_stability.py ...                                              [ 56%]
+tests\test_streaming.py ....                                             [ 60%]
+tests\test_streaming_coherence.py ..                                     [ 62%]
+tests\test_stt.py ....                                                   [ 66%]
+tests\test_supervisor_slow_crash.py .                                    [ 66%]
+tests\test_terminal_ui.py ..                                             [ 68%]
+tests\test_tools.py ...                                                  [ 71%]
+tests\test_transcript_session.py ..                                      [ 73%]
+tests\test_tts.py ....                                                   [ 77%]
+tests\test_tts_stream_end_integration.py .....                           [ 81%]
+tests\test_vad.py ...                                                    [ 84%]
+tests\test_vision.py ....                                                [ 88%]
+tests\test_workers.py ..........                                         [ 97%]
+tests\test_workflows.py ...                                              [100%]
+
+============================== warnings summary ===============================
+core\audio\pipecat_worker.py:5
+  C:\Users\IQ\OneDrive\Music\Documents\padas 1\agents\agents\FRIDAY\core\audio\pipecat_worker.py:5: DeprecationWarning: 'audioop' is deprecated and slated for removal in Python 3.13
+    import audioop
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+====================== 109 passed, 3 warnings in 55.10s =======================
+pytest : sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+At line:1 char:1
++ pytest tests/ > scratch_pytest_tests.txt 2>&1
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (sys:1: Deprecat...ule__ attribute:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

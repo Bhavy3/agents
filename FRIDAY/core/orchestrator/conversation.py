@@ -72,6 +72,10 @@ class OrchestratorWorker(BaseWorker):
         self.event_bus.subscribe(EventType.STREAM_COMPLETED, self._handle_stream_completed)
         self.event_bus.subscribe(EventType.STREAM_CANCELLED, self._handle_stream_cancelled)
         self.event_bus.subscribe(EventType.STREAM_TIMEOUT, self._handle_stream_timeout)
+        
+        # Audio physical playback state resets
+        self.event_bus.subscribe(EventType.TTS_PLAYBACK_COMPLETED, self._handle_tts_playback_completed)
+        self.event_bus.subscribe(EventType.TTS_PLAYBACK_CANCELLED, self._handle_tts_playback_cancelled)
 
         # Handle CLI fallback if needed (Command console input bypasses STT)
         self.event_bus.subscribe(EventType.USER_TEXT_RECEIVED, self._handle_cli_text)
@@ -393,7 +397,16 @@ class OrchestratorWorker(BaseWorker):
         async with self._state_lock:
             if self.active_speaker != "assistant":
                 return
-                
+            routing_task = self._routing_task
+
+        # Ensure routing task finishes and flushes speculative chunks before signaling completion
+        if routing_task and not routing_task.done():
+            try:
+                await asyncio.shield(routing_task)
+            except Exception as e:
+                self.logger.warning("routing_task_await_failed_in_stream_completed", extra={"error": str(e)})
+
+        async with self._state_lock:
             full_text = event.payload.get("full_text", "")
             self.context.append({"role": "assistant", "content": full_text})
             turn_id = self.active_turn_id
@@ -439,6 +452,23 @@ class OrchestratorWorker(BaseWorker):
                 event.correlation_id
             )
         )
+
+    # Physical TTS Playback State Handlers
+    async def _handle_tts_playback_completed(self, event: Event) -> None:
+        async with self._state_lock:
+            # We only reset active_speaker to allow clean turn transitions.
+            # We DO NOT cancel _routing_task here. A single LLM response can span multiple sentences.
+            # If the LLM is slow (> 2.5s gap), physical audio might temporarily finish, firing COMPLETED.
+            # Cancelling the routing task here would truncate the response mid-generation.
+            if self.active_turn_id == event.payload.get("turn_id"):
+                self.active_speaker = "user"
+
+    async def _handle_tts_playback_cancelled(self, event: Event) -> None:
+        async with self._state_lock:
+            # We don't cancel _routing_task here either, as _handle_speech_started
+            # already cancels it upon detecting the interruption that caused this cancel.
+            if self.active_turn_id == event.payload.get("turn_id"):
+                self.active_speaker = "user"
 
 
     async def work(self) -> None:

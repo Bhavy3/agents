@@ -4,10 +4,7 @@ import threading
 import time
 from typing import Any
 import numpy as np
-try:
-    import sounddevice as sd
-except ImportError:
-    sd = None
+import uuid
 from core.events.bus import EventBus
 from core.events.event_types import EventType
 from core.events.models import Event
@@ -28,30 +25,28 @@ class TtsWorker(BaseWorker):
         event_bus: EventBus,
         model_path: str | None = None,
         config_path: str | None = None,
-        output_device: int | str | None = None,
         max_queue_size: int = 50,
     ) -> None:
         super().__init__("tts", event_bus)
         self.model_path = model_path
         self.config_path = config_path
-        self.output_device = output_device
         self.max_queue_size = max_queue_size
         self.logger = get_logger("audio.tts")
 
         self.voice = None
         self._is_initialized = False
         self._playback_queue: queue.Queue[bytes] = queue.Queue(maxsize=self.max_queue_size)
-        self._playback_thread = None
+        self._publish_task = None
 
         self._stop_playback = threading.Event()
         self._text_buffer = ""
+        self._synthesis_lock = asyncio.Lock()
         
         # Stats
         self.chunks_synthesized = 0
         self.interruptions = 0
         self.synthesis_errors = 0
         self.active_turn_id = None
-        self.playback_active = False
 
     async def run(self) -> None:
         # 1. Initialize voice
@@ -62,10 +57,6 @@ class TtsWorker(BaseWorker):
         else:
             self.logger.warning("tts_no_model_or_library_degraded_mode")
 
-        if sd is None:
-            self.logger.error("sounddevice_not_installed_tts_disabled")
-            return
-
         # 2. Subscribe to events
         self.event_bus.subscribe(EventType.ASSISTANT_RESPONSE_PARTIAL, self._handle_partial_response)
         self.event_bus.subscribe(EventType.ASSISTANT_RESPONSE_COMPLETED, self._handle_response_completed)
@@ -74,10 +65,8 @@ class TtsWorker(BaseWorker):
         self.event_bus.subscribe(EventType.CONVERSATION_INTERRUPTED, self._handle_interruption)
         self.event_bus.subscribe(EventType.CONVERSATION_TURN_STARTED, self._handle_turn_started)
 
-        self._loop = asyncio.get_running_loop()
-        # 3. Start playback thread
-        self._playback_thread = threading.Thread(target=self._playback_loop, daemon=True)
-        self._playback_thread.start()
+        # 3. Start publish loop
+        self._publish_task = asyncio.create_task(self._publish_loop(), name="tts-publish-loop")
 
         await super().run()
 
@@ -100,9 +89,11 @@ class TtsWorker(BaseWorker):
 
     async def _handle_turn_started(self, event: Event) -> None:
         self.active_turn_id = event.payload.get("turn_id")
+        self._synthesis_lock = asyncio.Lock()
+        self._stop_playback.clear()
 
     async def _handle_partial_response(self, event: Event) -> None:
-        turn_id = event.payload.get("turn_id")
+        turn_id = event.payload.get("turn_id") or self.active_turn_id
         
         # Validate turn context
         if self.active_turn_id and turn_id and turn_id != self.active_turn_id:
@@ -131,16 +122,29 @@ class TtsWorker(BaseWorker):
             else:
                 break
         
-        for sentence in sentences:
-            await self._synthesize_and_queue(sentence, event.correlation_id)
+        async with self._synthesis_lock:
+            for sentence in sentences:
+                await self._synthesize_and_queue(sentence, event.correlation_id, turn_id=turn_id)
 
     async def _handle_response_completed(self, event: Event) -> None:
-        remaining = self._text_buffer.strip()
-        if remaining:
-            await self._synthesize_and_queue(remaining, event.correlation_id)
-        self._text_buffer = ""
+        turn_id = event.payload.get("turn_id") or self.active_turn_id
+        
+        async with self._synthesis_lock:
+            remaining = self._text_buffer.strip()
+            if remaining:
+                await self._synthesize_and_queue(remaining, event.correlation_id, turn_id=turn_id)
+            self._text_buffer = ""
+            
+            # Enqueue end of turn marker so _publish_loop emits TTS_STREAM_END
+            # only after all audio chunks for this turn are published
+            if self._is_initialized and self.voice:
+                try:
+                    await asyncio.to_thread(self._playback_queue.put, {"type": "end_of_turn", "turn_id": turn_id}, True, 1.0)
+                except queue.Full:
+                    self.logger.warning("tts_queue_full_dropping_end_marker")
 
     async def _handle_interruption(self, event: Event) -> None:
+        self.logger.info("tts_interruption_received", extra={"turn_id": event.payload.get("turn_id"), "active": self.active_turn_id})
         self._stop_playback.set()
         self._text_buffer = ""
         
@@ -153,14 +157,15 @@ class TtsWorker(BaseWorker):
             except queue.Empty:
                 break
         
-        if cleared > 0 or self.playback_active:
+        if cleared > 0 or self.active_turn_id:
             self.interruptions += 1
-            self.logger.info("tts_interrupted", extra={"cleared_chunks": cleared})
+            self.logger.info("tts_interrupted_publishing_cancelled", extra={"cleared_chunks": cleared, "turn_id": self.active_turn_id})
             await self.event_bus.publish(
-                Event.create(EventType.TTS_PLAYBACK_CANCELLED, {"reason": "interruption"}, self.name, event.correlation_id)
+                Event.create(EventType.TTS_PLAYBACK_CANCELLED, {"reason": "interruption", "turn_id": self.active_turn_id}, self.name, event.correlation_id)
             )
+            self.active_turn_id = None
 
-    async def _synthesize_and_queue(self, text: str, correlation_id: str | None) -> None:
+    async def _synthesize_and_queue(self, text: str, correlation_id: str | None, turn_id: str | None = None) -> None:
         if not self._is_initialized or not self.voice:
             return
 
@@ -169,19 +174,21 @@ class TtsWorker(BaseWorker):
         )
         
         try:
-            await asyncio.to_thread(self._stream_synthesis, text, correlation_id)
+            await asyncio.to_thread(self._stream_synthesis, text, correlation_id, turn_id)
         except Exception as e:
             self.synthesis_errors += 1
             self.logger.error("tts_synthesis_failed", extra={"error": str(e)})
 
-    def _stream_synthesis(self, text: str, correlation_id: str | None) -> None:
+    def _stream_synthesis(self, text: str, correlation_id: str | None, turn_id: str | None = None) -> None:
         try:
             for chunk in self.voice.synthesize(text):
                 if self._stop_playback.is_set():
                     break
                 
                 try:
-                    self._playback_queue.put(chunk.audio_int16_bytes, timeout=1.0)
+                    target_turn = turn_id or self.active_turn_id
+                    item = {"type": "audio", "data": chunk.audio_int16_bytes, "turn_id": target_turn}
+                    self._playback_queue.put(item, timeout=1.0)
                     self.chunks_synthesized += 1
                 except queue.Full:
                     self.logger.warning("tts_queue_full_dropping_audio")
@@ -189,91 +196,68 @@ class TtsWorker(BaseWorker):
         except Exception as e:
             self.logger.error(f"piper_stream_failed: {str(e)}", exc_info=True)
 
-    def _fire_playback_event(self, event_type: EventType) -> None:
-        if hasattr(self, "_loop") and self._loop and not self._loop.is_closed():
-            import asyncio
-            asyncio.run_coroutine_threadsafe(
-                self.event_bus.publish(
-                    Event.create(event_type, {}, self.name)
-                ),
-                self._loop
-            )
-
-    def _playback_loop(self) -> None:
-        sample_rate = self.voice.config.sample_rate if self.voice and hasattr(self.voice, "config") else 22050
-        
-        import sounddevice as sd
-        import time
-        import queue
-        
-        self.audio_buffer = bytearray()
-        
-        def callback(outdata, frames, time_info, status):
-            if status:
-                pass # Ignore status warnings like underflow to avoid log spam
-            
-            bytes_needed = frames * 2 # 16-bit mono = 2 bytes per frame
-            
-            if self._stop_playback.is_set():
-                self.audio_buffer.clear()
-                self._stop_playback.clear()
+    async def _publish_loop(self) -> None:
+        sr = getattr(getattr(self.voice, "config", None), "sample_rate", 22050)
+        sample_rate = int(sr) if isinstance(sr, (int, float)) else 22050
+        while not self.should_stop:
+            try:
+                # Use to_thread since queue.Queue is thread-based and blocking
+                item = await asyncio.to_thread(self._playback_queue.get, True, 1.0)
                 
-            # Fill buffer if we need more
-            while len(self.audio_buffer) < bytes_needed:
-                try:
-                    chunk = self._playback_queue.get_nowait()
-                    self.audio_buffer.extend(chunk)
+                if isinstance(item, dict) and item.get("type") == "end_of_turn":
+                    end_turn_id = item.get("turn_id") or self.active_turn_id
+                    self.logger.info("tts_publishing_stream_end", extra={"turn_id": end_turn_id})
+                    await self.event_bus.publish(
+                        Event.create(
+                            EventType.TTS_STREAM_END,
+                            {"turn_id": end_turn_id},
+                            self.name
+                        )
+                    )
                     self._playback_queue.task_done()
-                except queue.Empty:
-                    break
-                    
-            if len(self.audio_buffer) >= bytes_needed:
-                outdata[:] = bytes(self.audio_buffer[:bytes_needed])
-                del self.audio_buffer[:bytes_needed]
-                if not self.playback_active:
-                    self.playback_active = True
-                    self._fire_playback_event(EventType.TTS_PLAYBACK_STARTED)
-            else:
-                # Pad with silence
-                silence_needed = bytes_needed - len(self.audio_buffer)
-                outdata[:] = bytes(self.audio_buffer) + (b'\x00' * silence_needed)
-                self.audio_buffer.clear()
-                if self.playback_active:
-                    self.playback_active = False
-                    self._fire_playback_event(EventType.TTS_PLAYBACK_COMPLETED)
+                    continue
 
-        try:
-            with sd.RawOutputStream(
-                samplerate=sample_rate, 
-                blocksize=1024,
-                channels=1, 
-                dtype='int16', 
-                callback=callback,
-                device=self.output_device
-            ):
-                while not self.should_stop:
-                    time.sleep(0.1)
-        except Exception as e:
-            self.logger.error("tts_playback_failed", extra={"error": str(e)}, exc_info=True)
+                chunk = item.get("data")
+                turn_id = item.get("turn_id")
+
+                if chunk:
+                    chunk_id = str(uuid.uuid4())
+                    await self.event_bus.publish(
+                        Event.create(
+                            EventType.TTS_AUDIO_CHUNK,
+                            {"chunk_id": chunk_id, "audio_data": chunk, "sample_rate": sample_rate, "turn_id": turn_id},
+                            self.name
+                        )
+                    )
+                self._playback_queue.task_done()
+            except queue.Empty:
+                pass
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.logger.error("tts_publish_loop_error", extra={"error": str(e)})
+                await asyncio.sleep(0.1)
 
     async def stop(self) -> None:
         await super().stop()
         self._stop_playback.set()
-        if self._playback_thread and self._playback_thread.is_alive():
-            self._playback_thread.join(timeout=2.0)
+        if self._publish_task and not self._publish_task.done():
+            self._publish_task.cancel()
+            try:
+                await self._publish_task
+            except asyncio.CancelledError:
+                pass
 
     async def work(self) -> None:
         try:
             while not self.should_stop:
                 self.heartbeat(f"tts [chunks={self.chunks_synthesized} interrupts={self.interruptions} errors={self.synthesis_errors}]")
                 
-                # Watchdog: restart playback thread if it died unexpectedly
-                if self._playback_thread is not None and not self._playback_thread.is_alive() and not self.should_stop:
-                    if sd is not None:
-                        self.logger.warning("tts_playback_thread_dead_restarting")
-                        self._stop_playback.clear()
-                        self._playback_thread = threading.Thread(target=self._playback_loop, daemon=True)
-                        self._playback_thread.start()
+                # Watchdog: restart publish task if it died unexpectedly
+                if self._publish_task is not None and self._publish_task.done() and not self.should_stop:
+                    self.logger.warning("tts_publish_task_dead_restarting")
+                    self._stop_playback.clear()
+                    self._publish_task = asyncio.create_task(self._publish_loop(), name="tts-publish-loop")
                 
                 await asyncio.sleep(1.0)
         except asyncio.CancelledError:

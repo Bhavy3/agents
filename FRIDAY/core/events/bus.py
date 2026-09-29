@@ -66,6 +66,19 @@ class EventBus:
     def subscribe_all(self, handler: EventHandler) -> None:
         self._wildcard_subscribers.append(handler)
 
+    def unsubscribe(self, event_type: EventType, handler: EventHandler) -> None:
+        if event_type in self._subscribers:
+            try:
+                self._subscribers[event_type].remove(handler)
+            except ValueError:
+                pass
+
+    def unsubscribe_all(self, handler: EventHandler) -> None:
+        try:
+            self._wildcard_subscribers.remove(handler)
+        except ValueError:
+            pass
+
     async def publish(self, event: object) -> None:
         if not self._running:
             raise RuntimeError("EventBus must be started before publishing events.")

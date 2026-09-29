@@ -1,0 +1,212 @@
+﻿python : 2026-09-19 12:21:54.401 | INFO     | pipecat:<module>:54 - \u14da\u160f\u15e2 Pipecat 1.8.1 (Python 3.12.10 
+(tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]) \u14da\u160f\u15e2
+At line:1 char:1
++ python scripts/verify_hardware_tts_live.py > scratch_live_run.txt 2>& ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (2026-09-19 12:2...4da\u160f\u15e2:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+================================================================================
+LIVE HARDWARE TTS STREAM END VERIFICATION
+TTS Model: C:\Users\IQ\OneDrive\Music\Documents\padas 1\agents\agents\FRIDAY\data\models\tts\en_US-hfc_female-medium.onnx
+================================================================================
+2026-09-19 12:21:55,392 | INFO     | friday.events.bus | event_bus_started
+2026-09-19 12:21:55,394 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:21:58,288 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:21:58,288 | INFO     | friday.workers.pipecat_audio | pipecat_worker_starting
+2026-09-19 12:21:58,453 | INFO     | friday.audio.tts | tts_warmup_complete
+2026-09-19 12:21:58.552 | DEBUG    | pipecat.services.whisper.stt:_load:334 - Loading Whisper model...
+2026-09-19 12:22:00,186 | INFO     | httpx | HTTP Request: GET https://huggingface.co/api/models/Systran/faster-whisper-tiny/revision/main "HTTP/1.1 200 OK"
+2026-09-19 12:22:00.548 | DEBUG    | pipecat.services.whisper.stt:_load:339 - Loaded Whisper model
+2026-09-19 12:22:00,549 | INFO     | friday.workers.pipecat_audio | vad_config
+2026-09-19 12:22:00.551 | DEBUG    | pipecat.audio.vad.silero:__init__:147 - Loading Silero VAD model...
+2026-09-19 12:22:00.738 | DEBUG    | pipecat.audio.vad.silero:__init__:169 - Loaded Silero VAD
+2026-09-19 12:22:00.743 | DEBUG    | pipecat.processors.frame_processor:link:679 - Linking Pipeline#0::Source -> 
+LocalAudioInputTransport#0
+2026-09-19 12:22:00.744 | DEBUG    | pipecat.processors.frame_processor:link:679 - Linking LocalAudioInputTransport#0 
+-> AecProcessor#0
+2026-09-19 12:22:00.744 | DEBUG    | pipecat.processors.frame_processor:link:679 - Linking AecProcessor#0 -> 
+MuteGateProcessor#0
+2026-09-19 12:22:00.744 | DEBUG    | pipecat.processors.frame_processor:link:679 - Linking MuteGateProcessor#0 -> 
+VADProcessor#0
+2026-09-19 12:22:00.744 | DEBUG    | pipecat.processors.frame_processor:link:679 - Linking VADProcessor#0 -> 
+WhisperSTTService#0
+2026-09-19 12:22:00.744 | DEBUG    | pipecat.processors.frame_processor:link:679 - Linking WhisperSTTService#0 -> 
+TranscriptionPublisher#0
+2026-09-19 12:22:00.744 | DEBUG    | pipecat.processors.frame_processor:link:679 - Linking TranscriptionPublisher#0 -> 
+TtsOutputProcessor#0
+2026-09-19 12:22:00.744 | DEBUG    | pipecat.processors.frame_processor:link:679 - Linking TtsOutputProcessor#0 -> 
+LocalAudioOutputTransport#0
+2026-09-19 12:22:00.744 | DEBUG    | pipecat.processors.frame_processor:link:679 - Linking LocalAudioOutputTransport#0 
+-> Pipeline#0::Sink
+2026-09-19 12:22:00.745 | DEBUG    | pipecat.processors.frame_processor:link:679 - Linking PipelineTask#0::Source -> 
+RTVIProcessor#0
+2026-09-19 12:22:00,745 | INFO     | friday.workers.pipecat_audio | pipecat_pipeline_ready
+2026-09-19 12:22:00.745 | DEBUG    | pipecat.processors.frame_processor:link:679 - Linking RTVIProcessor#0 -> 
+Pipeline#0
+2026-09-19 12:22:00.745 | DEBUG    | pipecat.processors.frame_processor:link:679 - Linking Pipeline#0 -> 
+PipelineTask#0::Sink
+2026-09-19 12:22:00.746 | DEBUG    | pipecat.workers.runner:run:277 - WorkerRunner 'runner-134c42ab': started running
+2026-09-19 12:22:00.746 | DEBUG    | pipecat.workers.runner:add_workers:233 - WorkerRunner 'runner-134c42ab': added 
+worker 'PipelineTask#0'
+2026-09-19 12:22:00.746 | DEBUG    | pipecat.workers.runner:_start_worker:461 - WorkerRunner 'runner-134c42ab': 
+starting worker 'PipelineTask#0'
+2026-09-19 12:22:00,745 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:00,746 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:00,746 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:00,746 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:00.817 | DEBUG    | pipecat.audio.vad.vad_analyzer:set_params:157 - Setting VAD params to: 
+confidence=0.7 start_secs=0.2 stop_secs=2.0 min_volume=0.6
+
+--- Pipeline and TTS initialization complete. Starting scenarios ---
+
+
+============================================================
+SCENARIO 1: SHORT RESPONSE ('Hello.')
+============================================================
+2026-09-19 12:22:01,387 | INFO     | friday.workers.pipecat_audio | pipecat_firing_tts_playback_started
+2026-09-19 12:22:01,395 | INFO     | friday.audio.tts | tts_publishing_stream_end
+
+>>> [EVENT RECEIVED] TTS_STREAM_END: turn_id=live_short_1
+2026-09-19 12:22:01,395 | INFO     | friday.workers.pipecat_audio | pipecat_firing_tts_playback_completed
+
+>>> [EVENT RECEIVED] TTS_PLAYBACK_COMPLETED: turn_id=live_short_1 chunk_id=c8b844a0-dd10-4c61-a78f-239f2e629b15
+Waiting 3.0s extra to ensure 2.5s safety net DOES NOT fire...
+2026-09-19 12:22:01,751 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:01,752 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:02,754 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:02,754 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:02.886 | DEBUG    | pipecat.pipeline.worker:_wait_for_pipeline_start:1186 - PipelineTask#0: Starting. 
+Waiting for StartFrame#0 to reach the end of the pipeline...
+2026-09-19 12:22:02.886 | WARNING  | pipecat.services.stt_service:service_metadata_frame:574 - WhisperSTTService#0: 
+ttfs_p99_latency not set, using default 1.0s
+2026-09-19 12:22:02.886 | DEBUG    | pipecat.registry.registry:register:132 - Worker 'PipelineTask#0' ready (local)
+2026-09-19 12:22:02.886 | DEBUG    | pipecat.workers.runner:_send_registry:513 - WorkerRunner 'runner-134c42ab': 
+broadcasting registry: ['PipelineTask#0']
+2026-09-19 12:22:02.886 | DEBUG    | pipecat.workers.base_worker:_maybe_activate:1277 - Worker 'PipelineTask#0': 
+activated
+2026-09-19 12:22:02.886 | DEBUG    | pipecat.pipeline.worker:_wait_for_pipeline_start:1199 - PipelineTask#0: 
+StartFrame#0 reached the end of the pipeline, pipeline is now ready.
+2026-09-19 12:22:03,755 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:03,755 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:04.576 | DEBUG    | pipecat.processors.audio.vad_processor:on_speech_started:73 - VADProcessor#0: 
+User started speaking
+Scenario 1 finished. Stream end fires: 1, Safety net fires: 0
+
+============================================================
+SCENARIO 2: LONG MULTI-SENTENCE RESPONSE (11 sentences)
+============================================================
+2026-09-19 12:22:04,739 | INFO     | friday.workers.pipecat_audio | pipecat_firing_tts_playback_started
+2026-09-19 12:22:04,755 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:04,755 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:05,756 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:05,756 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:06,140 | INFO     | friday.audio.tts | tts_publishing_stream_end
+
+>>> [EVENT RECEIVED] TTS_STREAM_END: turn_id=live_long_2
+2026-09-19 12:22:06,140 | INFO     | friday.workers.pipecat_audio | pipecat_firing_tts_playback_completed
+
+>>> [EVENT RECEIVED] TTS_PLAYBACK_COMPLETED: turn_id=live_long_2 chunk_id=3c505fc8-dc49-4e35-ae1c-05960ea08103
+Waiting 3.0s extra to ensure 2.5s safety net DOES NOT fire...
+2026-09-19 12:22:06,758 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:06,758 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:06.917 | DEBUG    | pipecat.processors.audio.vad_processor:on_speech_stopped:81 - VADProcessor#0: 
+User stopped speaking
+2026-09-19 12:22:06,917 | INFO     | faster_whisper | Processing audio with duration 00:03.340
+2026-09-19 12:22:07,754 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:07,754 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:08,764 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:08,764 | INFO     | friday.workers.state | worker_state_transition
+Scenario 2 finished. Stream end fires: 2, Safety net fires: 0
+
+============================================================
+SCENARIO 3: THREE RAPID CONSECUTIVE TURNS BACK TO BACK
+============================================================
+Initiating live_rapid_3a: 'First rapid acknowledgment.'
+2026-09-19 12:22:09,245 | INFO     | friday.workers.pipecat_audio | pipecat_firing_tts_playback_started
+2026-09-19 12:22:09,246 | INFO     | friday.audio.tts | tts_publishing_stream_end
+
+>>> [EVENT RECEIVED] TTS_STREAM_END: turn_id=live_rapid_3a
+2026-09-19 12:22:09,246 | INFO     | friday.workers.pipecat_audio | pipecat_firing_tts_playback_completed
+
+>>> [EVENT RECEIVED] TTS_PLAYBACK_COMPLETED: turn_id=live_rapid_3a chunk_id=2af16efd-0b7e-402c-ae29-5a7d988b3e66
+Initiating live_rapid_3b: 'Second rapid update here.'
+2026-09-19 12:22:09,658 | INFO     | friday.workers.pipecat_audio | pipecat_firing_tts_playback_started
+2026-09-19 12:22:09,660 | INFO     | friday.audio.tts | tts_publishing_stream_end
+
+>>> [EVENT RECEIVED] TTS_STREAM_END: turn_id=live_rapid_3b
+2026-09-19 12:22:09,660 | INFO     | friday.workers.pipecat_audio | pipecat_firing_tts_playback_completed
+
+>>> [EVENT RECEIVED] TTS_PLAYBACK_COMPLETED: turn_id=live_rapid_3b chunk_id=f5578695-92b2-41ee-af80-9dac587a066e
+2026-09-19 12:22:09,756 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:09,756 | INFO     | friday.workers.state | worker_state_transition
+Initiating live_rapid_3c: 'Third and final rapid confirmation.'
+2026-09-19 12:22:10,063 | INFO     | friday.workers.pipecat_audio | pipecat_firing_tts_playback_started
+2026-09-19 12:22:10,063 | INFO     | friday.audio.tts | tts_publishing_stream_end
+
+>>> [EVENT RECEIVED] TTS_STREAM_END: turn_id=live_rapid_3c
+2026-09-19 12:22:10,063 | INFO     | friday.workers.pipecat_audio | pipecat_firing_tts_playback_completed
+
+>>> [EVENT RECEIVED] TTS_PLAYBACK_COMPLETED: turn_id=live_rapid_3c chunk_id=9ef931ea-f43a-4e59-b898-07b2dbd28cb2
+Waiting 3.0s extra to ensure 2.5s safety net DOES NOT fire...
+2026-09-19 12:22:10,755 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:10,755 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:11.275 | DEBUG    | pipecat.processors.audio.vad_processor:on_speech_started:73 - VADProcessor#0: 
+User started speaking
+2026-09-19 12:22:11,756 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:11,756 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:12,756 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:12,757 | INFO     | friday.workers.state | worker_state_transition
+Scenario 3 finished. Stream end fires: 5, Safety net fires: 0
+
+================================================================================
+FINAL CLI DASHBOARD STATUS:
+================================================================================
+FRIDAY STATUS
+uptime_seconds=17.941
+queue_depth=0
+processed_events=65
+failed_events=0
+dropped_events=0
+restart_count=0
+avg_processing_seconds=0.039697
+streams=0 chunks=0 stream_errors=0
+tts_playback: stream_end_fires=5 safety_net_fires=0 safety_net_ratio=0.0
+workers:
+ - tts state=running alive=True restarts=0 uptime=12.587s task=tts [chunks=6 interrupts=0 errors=0]
+ - pipecat_audio state=running alive=True restarts=0 uptime=17.939s task=running pipeline
+
+================================================================================
+FINAL CLI DASHBOARD METRICS:
+================================================================================
+FRIDAY METRICS
+uptime_seconds=17.941
+processed_events=65
+failed_events=0
+dropped_events=0
+restart_count=0
+avg_processing_seconds=0.039697
+tts_playback: stream_end_fires=5 safety_net_fires=0 safety_net_ratio=0.0
+
+================================================================================
+FINAL TOTALS: stream_end_fires=5 | safety_net_fires=0
+Safety Net Ratio: 0.0000
+================================================================================
+2026-09-19 12:22:13,756 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:13,756 | INFO     | friday.workers.pipecat_audio | pipecat_worker_stopping
+2026-09-19 12:22:13.756 | DEBUG    | pipecat.pipeline.worker:_cancel:1119 - Cancelling pipeline worker PipelineTask#0
+2026-09-19 12:22:13.756 | DEBUG    | pipecat.pipeline.worker:_wait_for_pipeline_end:1219 - PipelineTask#0: Closing. 
+Waiting for CancelFrame#0(reason: None) to reach the end of the pipeline...
+2026-09-19 12:22:15.756 | DEBUG    | pipecat.pipeline.worker:_handle_worker_cancel:1347 - Worker 'PipelineTask#0': 
+received cancel
+2026-09-19 12:22:33.765 | WARNING  | pipecat.pipeline.worker:wait_for_cancel:1212 - PipelineTask#0: timeout waiting 
+for CancelFrame#0(reason: None) to reach the end of the pipeline (being blocked somewhere?).
+2026-09-19 12:22:33.765 | DEBUG    | pipecat.utils.base_object:cleanup:176 - PipelineTask#0: waiting on event handlers 
+to finish ['on_pipeline_finished']...
+2026-09-19 12:22:33.818 | DEBUG    | pipecat.pipeline.worker:run:869 - Pipeline worker PipelineTask#0 is finishing...
+2026-09-19 12:22:33.818 | DEBUG    | pipecat.pipeline.worker:run:873 - Pipeline worker PipelineTask#0 has finished
+2026-09-19 12:22:33.818 | DEBUG    | pipecat.workers.runner:run:320 - WorkerRunner 'runner-134c42ab': finished running
+2026-09-19 12:22:33,818 | INFO     | friday.workers.state | worker_state_transition
+2026-09-19 12:22:33,818 | INFO     | friday.events.bus | event_bus_stopped
+
+>>> ALL THREE SCENARIOS PASSED WITH ZERO SAFETY-NET TRIGGERS (100% STREAM_END FIRES)! <<<

@@ -57,6 +57,9 @@ class Settings:
     audio_output_device: int | str | None = None
     audio_input_device: int | str | None = None
     mute_gate_delay: float = 0.6
+    aec_delay_ms: int = 180
+    aec_enable_ns: bool = False
+    aec_enable_agc: bool = False
 
     @property
     def data_dir(self) -> Path:
@@ -102,6 +105,15 @@ def load_settings() -> Settings:
     vad_stop_secs_str = os.getenv("FRIDAY_VAD_STOP_SECS")
     vad_stop_secs = float(vad_stop_secs_str) if vad_stop_secs_str else 2.0
 
+    aec_delay_ms_str = os.getenv("FRIDAY_AEC_DELAY_MS")
+    aec_delay_ms = int(aec_delay_ms_str) if aec_delay_ms_str else 180
+
+    aec_enable_ns_str = os.getenv("FRIDAY_AEC_ENABLE_NS", "false").lower()
+    aec_enable_ns = aec_enable_ns_str == "true"
+
+    aec_enable_agc_str = os.getenv("FRIDAY_AEC_ENABLE_AGC", "false").lower()
+    aec_enable_agc = aec_enable_agc_str == "true"
+
     if runtime_mode == RuntimeMode.TESTING:
         return Settings(
             root_dir=Path(__file__).resolve().parents[2],
@@ -126,6 +138,9 @@ def load_settings() -> Settings:
             audio_input_device=audio_input_device,
             vad_stop_secs=vad_stop_secs,
             mute_gate_delay=mute_gate_delay,
+            aec_delay_ms=aec_delay_ms,
+            aec_enable_ns=aec_enable_ns,
+            aec_enable_agc=aec_enable_agc,
         )
     if runtime_mode == RuntimeMode.PRODUCTION:
         return Settings(
@@ -151,6 +166,9 @@ def load_settings() -> Settings:
             audio_input_device=audio_input_device,
             vad_stop_secs=vad_stop_secs,
             mute_gate_delay=mute_gate_delay,
+            aec_delay_ms=aec_delay_ms,
+            aec_enable_ns=aec_enable_ns,
+            aec_enable_agc=aec_enable_agc,
         )
     return Settings(
         root_dir=Path(__file__).resolve().parents[2],
@@ -165,4 +183,7 @@ def load_settings() -> Settings:
         audio_input_device=audio_input_device,
             vad_stop_secs=vad_stop_secs,
         mute_gate_delay=mute_gate_delay,
+            aec_delay_ms=aec_delay_ms,
+            aec_enable_ns=aec_enable_ns,
+            aec_enable_agc=aec_enable_agc,
     )

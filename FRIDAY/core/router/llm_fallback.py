@@ -4,6 +4,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 import json
+import re
 import asyncio
 
 from core.events.bus import EventBus
@@ -32,6 +33,66 @@ User Input: give in depth knowledge about the jarvis
 User Input: search google for latest news
 {"intent": "search_web", "confidence": 0.9, "suggested_action": "", "reasoning_summary": "Web search request.", "parameters": {"query": "latest news"}}
 """
+
+
+def _extract_parameters(raw_response: str) -> dict:
+    raw = (raw_response or "").strip()
+
+    # 0. Strip markdown fences: if the text contains ```json or ```, take the content between the first pair of fences, then strip whitespace.
+    text = raw
+    if "```json" in text:
+        start = text.index("```json") + 7
+        end = text.find("```", start)
+        if end != -1:
+            text = text[start:end].strip()
+        else:
+            text = text[start:].strip()
+    elif "```" in text:
+        start = text.index("```") + 3
+        end = text.find("```", start)
+        if end != -1:
+            text = text[start:end].strip()
+        else:
+            text = text[start:].strip()
+
+    initial_error: Exception | None = None
+
+    # 1. Strict json.loads. If the result is a dict: return result["parameters"] if it is a dict, else {}.
+    try:
+        result = json.loads(text)
+        if isinstance(result, dict):
+            params = result.get("parameters")
+            return params if isinstance(params, dict) else {}
+    except (json.JSONDecodeError, ValueError) as e:
+        initial_error = e
+
+    # 2. If the stripped text ends with ")", replace that final character with "}" and parse again, using the same rule as tier 1.
+    trimmed = text.rstrip()
+    if trimmed.endswith(")"):
+        repaired = trimmed[:-1] + "}"
+        try:
+            result = json.loads(repaired)
+            if isinstance(result, dict):
+                params = result.get("parameters")
+                return params if isinstance(params, dict) else {}
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # 3. Regex: r'"parameters"\s*:\s*(\{(?:[^{}"]|"(?:\\.|[^"\\])*")*\})'
+    match = re.search(r'"parameters"\s*:\s*(\{(?:[^{}"]|"(?:\\.|[^"\\])*")*\})', text)
+    if match:
+        try:
+            params = json.loads(match.group(1))
+            if isinstance(params, dict):
+                return params
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # 4. Otherwise: logger.error("llm_parameters_unrecoverable", extra={"raw_response": raw}, exc_info=initial_error) and return {}.
+    if initial_error is None:
+        initial_error = ValueError("Could not parse parameters as dictionary from LLM response")
+    logger.error("llm_parameters_unrecoverable", extra={"raw_response": raw}, exc_info=initial_error)
+    return {}
 
 
 class LlmFallbackRouter:
@@ -96,11 +157,7 @@ class LlmFallbackRouter:
             # If it's a valid tool but not in IntentName Enum, we might have a type issue.
             pass
 
-        parameters: dict = {}
-        try:
-            parameters = json.loads(raw_response or "{}").get("parameters", {})
-        except Exception as e:
-            logger.error("llm_fallback_json_parse_error", extra={"raw_response": raw_response, "error": str(e)}, exc_info=True)
+        parameters = _extract_parameters(raw_response)
 
         chat_response_text = ""
         if intent_name == IntentName.CHAT:

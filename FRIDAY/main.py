@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import argparse
+import os
 
 from core.app import FridayApp, run_app
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def main() -> None:
@@ -19,8 +23,15 @@ def main() -> None:
         default=300.0,
         help="Runtime validation duration in seconds.",
     )
+    parser.add_argument(
+        "--text-only",
+        action="store_true",
+        help="Run without microphone, VAD, Whisper, or TTS workers.",
+    )
     args = parser.parse_args()
     try:
+        if args.text_only:
+            os.environ["FRIDAY_AUDIO_ENABLED"] = "false"
         if args.burn_in:
             report = asyncio.run(FridayApp().run_validation(args.duration_seconds))
             print(report)

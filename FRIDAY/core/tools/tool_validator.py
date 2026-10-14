@@ -51,7 +51,15 @@ class ToolValidator:
         risk = ToolRisk.SAFE
         
         # Tools that are inherently RESTRICTED or DANGEROUS
-        if tool_name in ["delete_file", "terminate_process"]:
+        if tool_name in [
+            "delete_file",
+            "terminate_process",
+            "write_text_file",
+            "launch_app",
+            "press_key",
+            "keyboard_shortcut",
+            "move_mouse_to",
+        ]:
             risk = ToolRisk.RESTRICTED
         elif tool_name in ["execute_shell", "edit_system_config"]:
             risk = ToolRisk.DANGEROUS

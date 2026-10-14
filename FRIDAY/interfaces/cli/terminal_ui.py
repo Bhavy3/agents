@@ -34,8 +34,14 @@ class TerminalUI:
         while self._running:
             try:
                 text = await asyncio.to_thread(input, "You > ")
-            except (EOFError, KeyboardInterrupt):
+            except KeyboardInterrupt:
                 text = "exit"
+            except EOFError:
+                # Stdin closed or non-interactive; keep FRIDAY alive in voice-only mode
+                self.cli_input_enabled = False
+                while self._running:
+                    await asyncio.sleep(0.5)
+                return
             await self.handle_command(text)
 
     async def handle_command(self, text: str) -> bool:

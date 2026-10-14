@@ -8,7 +8,16 @@ class PersonalityPromptInjector:
         instructions = [
             f"Tonal guideline: {config.tone}.",
             f"Response length: {config.verbosity}.",
-            f"Speaking pace: {config.pacing}."
+            f"Speaking pace: {config.pacing}.",
+            (
+                "Memory capability: You can retain information long-term, but save it only when "
+                "the user explicitly asks you to remember it. Never claim that you cannot remember "
+                "past conversations or have no memory capability. Use only facts in the supplied "
+                "System Memory/Context or conversation. If asked about a detail that is not present "
+                "in the available memory or conversation, say you do not have it saved, explain that "
+                "you retain details only when explicitly asked, and offer to remember it now. Do not "
+                "save it unless the user explicitly asks."
+            ),
         ]
 
         # Mode specific nuances

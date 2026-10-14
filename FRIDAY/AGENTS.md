@@ -1,28 +1,39 @@
-# VERIFY: Does AecProcessor.cleanup() Actually Exist?
+TASK: Harden the Hallucination Investigation (Investigation Only, No Fixes)
+MODE: No edits to core/, launchers, or .env. Scratch files are allowed.
 
-## Skills Active
-Ponytail — active. ECC — active.
+STEP 0: Checkpoint
+Run `git status -s` and `git diff --stat` in the repo root. Create a checkpoint commit of the current working tree on a new branch named `checkpoint/pre-hallucination-fix` (do not push). Report the commit hash. If the commit fails, stop and report why.
 
-The diff shown only adds `await self.aec_processor.cleanup()` to the
-worker's `finally` block — it does NOT show `AecProcessor` gaining a
-`cleanup()` method itself. `TtsOutputProcessor.cleanup()` already existed
-from earlier work, but nothing shown defines one on `AecProcessor`.
+STEP 1: Server template check
+Run `curl http://127.0.0.1:8080/props` (or the equivalent GET). Paste the full JSON. Report the `chat_template` field, or state that it is absent. State whether the server applies the Qwen template to the chat endpoint. Do not assume.
 
-## Required
-1. Confirm: does `AecProcessor` currently have a `cleanup()` method? Show
-   its exact current source. If it doesn't exist, this new call will raise
-   `AttributeError` the next time the worker shuts down or restarts —
-   which would ironically crash the shutdown path meant to fix the leak.
-2. If missing, add it now: it must cancel `_feeder_task` (the actual
-   asyncio task doing the leaking, per the earlier "dangling tasks"
-   warning — confirm the exact attribute name matches what's really used,
-   don't assume `_feeder_task` if the real name differs) and unsubscribe
-   any event bus handlers `AecProcessor` registered, mirroring
-   `TtsOutputProcessor.cleanup()`'s pattern.
-3. Show the full diff for this addition.
-4. Re-run full pytest, confirm 112 still passes.
-5. Then do a real test: trigger at least one supervisor restart (or the
-   idle-timeout path if you keep it for a quick check) and confirm no
-   AttributeError appears and no dangling-task warning appears afterward.
+STEP 2: The 72-degree fabrication (highest priority)
+Reproduce the Item 4 interruption setup: ask a long question, then interrupt with "Never mind, what's the weather?". Capture the full log for that turn, including:
+  a. Whether any search or tool event fired for the weather question.
+  b. The exact outgoing request for that turn.
+  c. The response text, verbatim.
+Report whether "72 degrees, sunny" appears anywhere in the logs, memory, or prompt. Search the whole repo and data/ for "72". Paste the matches with file:line. If the number is not found in any captured input, say the source is UNKNOWN and do not guess.
 
-Once confirmed, the user's hardware idle-timeout test is good to go.
+STEP 3: Repeated ablation (replaces the single-sample Step 6)
+Using the captured request from the previous report, run each variant 10 times with fixed sampling (temperature 0, record top_p, max_tokens, seed if supported):
+  V0 full prompt
+  V1 no tone block
+  V2 no personality block
+  V3 no memory block
+  V4 system and user split into separate roles (system = persona/tone, user = query), if the server template supports it
+  V5 raw user-only, no system content
+For each: count how many of 10 responses are correct for the query "What is 2 + 2?" and for "What is your name?". Report a table with counts, not single examples. Also paste one full example response per variant.
+
+STEP 4: Missing row
+Re-run the native-role row (V4) and report its result, since the earlier report left it blank.
+
+STEP 5: Pinned-memory path
+Find where pinned notes are read and whether they bypass the relevance filter. Capture one turn where a pinned note exists and the query is unrelated. Report included or excluded, with the code line that decides it. Then re-run the earlier "What did I tell you my name was?" case 5 times and report what was injected each time.
+
+STEP 6: World Cup and location
+  a. Report the search snippets verbatim (short quotes only), and mark the model's answer as faithful or unfaithful to them.
+  b. Mark the truth of "Spain won 2026" as UNKNOWN unless a primary source is fetched. Use web_search on a primary source (FIFA) and paste its result.
+  c. For location, capture the outbound request if possible. If not, mark the mechanism UNKNOWN.
+
+STEP 7: Report
+Give a table: hypothesis, the test, counts out of 10, status (CONFIRMED only if it meets the 9-of-10 rule, otherwise UNCONFIRMED). List every UNKNOWN with the evidence needed. Do not propose code changes.

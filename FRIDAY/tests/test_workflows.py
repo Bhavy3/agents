@@ -46,7 +46,7 @@ async def test_workflow_recovery_retries():
     bus = EventBus()
     worker = WorkflowWorker(bus)
     
-    steps = [{"intent": "flaky_tool", "parameters": {}}]
+    steps = [{"intent": "search_web", "parameters": {"query": "test"}}]
     workflow_id = await worker.engine.create_workflow("retry test", steps)
     workflow = worker.engine.active_workflows[workflow_id]
     
@@ -83,3 +83,27 @@ async def test_workflow_step_limit():
     
     with pytest.raises(ValueError):
         await engine.create_workflow("overload", steps)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_action_result_does_not_advance_workflow_twice():
+    bus = EventBus()
+    engine = WorkflowEngine(bus)
+    workflow_id = await engine.create_workflow("duplicate result", [
+        {"intent": "first", "parameters": {}},
+        {"intent": "second", "parameters": {}},
+    ])
+    await bus.start()
+    await engine.start_workflow(workflow_id)
+    workflow = engine.active_workflows[workflow_id]
+    first_step = workflow.steps[0]
+
+    await engine.handle_action_result(first_step.id, True, "done")
+    assert workflow.steps[1].status == WorkflowStatus.RUNNING
+
+    # A duplicate completion for the already-completed first step is ignored.
+    await engine.handle_action_result(first_step.id, True, "duplicate")
+    assert workflow.steps[1].status == WorkflowStatus.RUNNING
+    assert workflow.status == WorkflowStatus.RUNNING
+
+    await bus.stop()

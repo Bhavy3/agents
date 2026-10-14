@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import time
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -6,6 +7,8 @@ from typing import Any, Optional
 from core.events.bus import EventBus
 from core.events.event_types import EventType
 from core.events.models import Event
+
+logger = logging.getLogger("core.cognition.cognitive_state")
 
 class TurnState(StrEnum):
     IDLE = "IDLE"
@@ -37,6 +40,7 @@ class CognitiveStateEngine:
         self.event_bus = event_bus
         self._state = CognitiveState()
         self._lock = asyncio.Lock()
+        self.current_tone: str = "curious"  # default
 
     async def get_state(self) -> CognitiveState:
         async with self._lock:
@@ -106,3 +110,22 @@ class CognitiveStateEngine:
     async def reset_interruption(self):
         async with self._lock:
             self._state.interruption_owner = None
+
+    async def update_tone(self, utterance: str, history: Optional[list[str]] = None):
+        """Update emotional tone based on user input."""
+        from core.cognition.tone_detector import detect_tone
+
+        new_tone = detect_tone(utterance, history)
+        if new_tone != self.current_tone:
+            logger.debug(f"tone_shift: {self.current_tone} → {new_tone}")
+            self.current_tone = new_tone
+
+    def get_tone_context(self) -> str:
+        """Return tone-modulated system context string."""
+        tone_adjectives = {
+            "confident": "You are direct, assured, and confident. You speak without hedging.",
+            "cautious": "You are measured, qualified, and thoughtful. Use conditional language.",
+            "curious": "You are inquisitive, exploratory, and open-minded. Dig deeper into topics.",
+            "warm": "You are supportive, friendly, and compassionate. Show empathy and care.",
+        }
+        return tone_adjectives.get(self.current_tone, tone_adjectives["curious"])

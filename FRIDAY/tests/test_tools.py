@@ -139,3 +139,22 @@ async def test_tool_timeout_safety():
     
     await worker.stop()
     await bus.stop()
+
+
+@pytest.mark.parametrize("tool_name,params", [
+    ("write_text_file", {"file_path": "notes.txt", "content": "hello"}),
+    ("launch_app", {"command": "calc.exe"}),
+    ("press_key", {"key": "enter"}),
+    ("keyboard_shortcut", {"keys": ["ctrl", "c"]}),
+    ("move_mouse_to", {"x": 100, "y": 200}),
+])
+@pytest.mark.asyncio
+async def test_gated_tools_require_confirmation(tool_name, params):
+    from core.tools.tool_validator import ToolValidator
+    from core.tools.tool_models import ToolRisk
+
+    validator = ToolValidator()
+    res = validator.validate_request(tool_name, params)
+    assert res.allowed is True
+    assert res.risk == ToolRisk.RESTRICTED
+

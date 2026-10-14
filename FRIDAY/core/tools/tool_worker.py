@@ -16,7 +16,7 @@ class ToolWorker(BaseWorker):
     def __init__(self, event_bus: EventBus, metrics: Any = None):
         super().__init__("tool_worker", event_bus)
         self.metrics = metrics
-        self.registry = ToolRegistry()
+        self.registry = ToolRegistry(event_bus=event_bus)
         self.validator = ToolValidator()
         self.confirmations = ConfirmationSystem(event_bus)
         self._active_tasks: Dict[str, asyncio.Task] = {}
@@ -146,7 +146,12 @@ class ToolWorker(BaseWorker):
 
             await self.event_bus.publish(Event.create(
                 EventType.ACTION_COMPLETED,
-                {"success": result.success, "output": result.output, "error": result.error},
+                {
+                    "tool_name": name,
+                    "success": result.success,
+                    "output": result.output,
+                    "error": result.error,
+                },
                 self.name,
                 correlation_id
             ))
@@ -154,25 +159,27 @@ class ToolWorker(BaseWorker):
             response_text = result.output if result.success else f"Action failed: {result.error}"
             if not response_text:
                 response_text = f"Action {name} completed successfully."
-                
-            await self.event_bus.publish(Event.create(
-                EventType.RESPONSE_READY,
-                {"text": response_text},
-                self.name,
-                correlation_id
-            ))
+            if name != "search_web":
+                await self.event_bus.publish(Event.create(
+                    EventType.RESPONSE_READY,
+                    {"text": response_text},
+                    self.name,
+                    correlation_id
+                ))
             
             return result
 
         except asyncio.TimeoutError:
             err_msg = "Execution timed out (15s limit)"
             await self.event_bus.publish(Event.create(EventType.ACTION_TIMEOUT, {"tool_name": name}, self.name, correlation_id))
-            await self.event_bus.publish(Event.create(EventType.RESPONSE_READY, {"text": f"Action {name} timed out."}, self.name, correlation_id))
+            if name != "search_web":
+                await self.event_bus.publish(Event.create(EventType.RESPONSE_READY, {"text": f"Action {name} timed out."}, self.name, correlation_id))
             return ToolResult(False, "", err_msg)
         except Exception as e:
             self.logger.exception("tool_execution_failed")
-            await self.event_bus.publish(Event.create(EventType.ACTION_FAILED, {"error": str(e)}, self.name, correlation_id))
-            await self.event_bus.publish(Event.create(EventType.RESPONSE_READY, {"text": f"Action failed with error: {str(e)}"}, self.name, correlation_id))
+            await self.event_bus.publish(Event.create(EventType.ACTION_FAILED, {"tool_name": name, "error": str(e)}, self.name, correlation_id))
+            if name != "search_web":
+                await self.event_bus.publish(Event.create(EventType.RESPONSE_READY, {"text": f"Action failed with error: {str(e)}"}, self.name, correlation_id))
             return ToolResult(False, "", str(e))
 
     async def stop(self) -> None:

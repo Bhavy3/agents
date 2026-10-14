@@ -13,6 +13,14 @@ def mock_thinking_delay():
         yield mock
 
 
+async def _wait_until(predicate):
+    for _ in range(100):
+        if predicate():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError("condition was not satisfied before timeout")
+
+
 @pytest.mark.asyncio
 async def test_orchestrator_turn_ownership():
     from core.router.rules import Intent, IntentName
@@ -38,7 +46,7 @@ async def test_orchestrator_turn_ownership():
     await asyncio.sleep(0.1)
     
     await bus.publish(Event.create(EventType.STT_FINAL_TRANSCRIPT, {"segment_id": "seg_1", "text": "hello", "duration": 1.0, "confidence": 0.99}, "stt"))
-    await asyncio.sleep(0.1)
+    await _wait_until(lambda: mock_intent_router.route.await_count == 1)
     
     assert len(events) == 2
     assert events[0].event_type == EventType.CONVERSATION_TURN_STARTED
@@ -48,6 +56,140 @@ async def test_orchestrator_turn_ownership():
     mock_intent_router.route.assert_called_once()
     assert orchestrator.active_speaker == "assistant"
     
+    await orchestrator.stop()
+    await task
+    await bus.stop()
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_falls_back_to_chat_when_router_missing():
+    bus = EventBus()
+    await bus.start()
+
+    mock_streaming_worker = AsyncMock()
+    orchestrator = OrchestratorWorker(bus, None, mock_streaming_worker)
+
+    responses = []
+    async def track(e):
+        if e.event_type == EventType.RESPONSE_READY:
+            responses.append(e)
+
+    bus.subscribe(EventType.RESPONSE_READY, track)
+
+    task = asyncio.create_task(orchestrator.run())
+    await asyncio.sleep(0.1)
+
+    await bus.publish(Event.create(EventType.STT_FINAL_TRANSCRIPT, {"segment_id": "seg_1", "text": "hello", "duration": 1.0, "confidence": 0.99}, "stt"))
+    await _wait_until(lambda: bool(responses))
+
+    assert len(responses) == 1
+    assert responses[0].payload["text"] == "I'm unable to reach the conversation router right now. Please try again."
+    assert "hello" not in responses[0].payload["text"].lower()
+    assert orchestrator.active_speaker is None
+    assert orchestrator._routing_task is None
+
+    await orchestrator.stop()
+    await task
+    await bus.stop()
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_falls_back_to_chat_when_route_returns_none():
+    bus = EventBus()
+    await bus.start()
+
+    mock_router = AsyncMock()
+    mock_router.route.return_value = None
+    mock_streaming_worker = AsyncMock()
+    orchestrator = OrchestratorWorker(bus, mock_router, mock_streaming_worker)
+
+    responses = []
+    async def track_response(e):
+        responses.append(e)
+    bus.subscribe(EventType.RESPONSE_READY, track_response)
+
+    task = asyncio.create_task(orchestrator.run())
+    await asyncio.sleep(0.1)
+
+    await bus.publish(Event.create(EventType.STT_FINAL_TRANSCRIPT, {"segment_id": "seg_1", "text": "hello", "duration": 1.0, "confidence": 0.99}, "stt"))
+    await _wait_until(lambda: bool(responses))
+
+    assert len(responses) == 1
+    assert responses[0].payload["text"] == "I'm unable to reach the conversation router right now. Please try again."
+    assert "hello" not in responses[0].payload["text"].lower()
+    assert orchestrator.active_speaker is None
+    assert orchestrator._routing_task is None
+
+    await orchestrator.stop()
+    await task
+    await bus.stop()
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_falls_back_when_router_raises(caplog):
+    bus = EventBus()
+    await bus.start()
+
+    mock_router = AsyncMock()
+    mock_router.route.side_effect = RuntimeError("router unavailable")
+    mock_streaming_worker = AsyncMock()
+    orchestrator = OrchestratorWorker(bus, mock_router, mock_streaming_worker)
+
+    responses = []
+    async def track_response(e):
+        responses.append(e)
+    bus.subscribe(EventType.RESPONSE_READY, track_response)
+
+    task = asyncio.create_task(orchestrator.run())
+    await asyncio.sleep(0.1)
+
+    await bus.publish(Event.create(EventType.STT_FINAL_TRANSCRIPT, {"segment_id": "seg_1", "text": "private input", "duration": 1.0, "confidence": 0.99}, "stt"))
+    await _wait_until(lambda: bool(responses))
+
+    assert len(responses) == 1
+    assert responses[0].payload["text"] == "I'm unable to reach the conversation router right now. Please try again."
+    assert "private input" not in responses[0].payload["text"].lower()
+    assert orchestrator.active_turn_id is None
+    assert orchestrator.active_speaker is None
+    assert orchestrator._routing_task is None
+    assert any(
+        record.message == "intent_router_route_failed" and record.exc_info is not None
+        for record in caplog.records
+    )
+
+    await orchestrator.stop()
+    await task
+    await bus.stop()
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_normal_chat_response_still_works():
+    bus = EventBus()
+    await bus.start()
+
+    mock_router = AsyncMock()
+    mock_router.route.return_value = AsyncMock(name="Intent")
+    from core.router.rules import Intent, IntentName
+    mock_router.route.return_value = Intent(IntentName.CHAT, 0.99, {"response_text": "Normal chat reply"})
+    mock_streaming_worker = AsyncMock()
+    orchestrator = OrchestratorWorker(bus, mock_router, mock_streaming_worker)
+
+    responses = []
+    async def track_response(e):
+        responses.append(e)
+    bus.subscribe(EventType.RESPONSE_READY, track_response)
+
+    task = asyncio.create_task(orchestrator.run())
+    await asyncio.sleep(0.1)
+
+    await bus.publish(Event.create(EventType.STT_FINAL_TRANSCRIPT, {"segment_id": "seg_1", "text": "hello", "duration": 1.0, "confidence": 0.99}, "stt"))
+    await _wait_until(lambda: bool(responses))
+
+    assert len(responses) == 1
+    assert responses[0].payload["text"] == "Normal chat reply"
+    assert orchestrator.active_speaker is None
+    assert orchestrator._routing_task is None
+
     await orchestrator.stop()
     await task
     await bus.stop()
@@ -81,7 +223,7 @@ async def test_orchestrator_interruption():
     
     # 1. User says something
     await bus.publish(Event.create(EventType.STT_FINAL_TRANSCRIPT, {"segment_id": "seg_1", "text": "hello", "duration": 1.0, "confidence": 0.99}, "stt"))
-    await asyncio.sleep(0.1)
+    await _wait_until(lambda: mock_intent_router.route.await_count == 1)
     
     # Assert assistant is thinking/routing
     assert orchestrator.active_speaker == "assistant"
@@ -174,7 +316,7 @@ async def test_orchestrator_turn_ownership():
     await asyncio.sleep(0.1)
     
     await bus.publish(Event.create(EventType.STT_FINAL_TRANSCRIPT, {"segment_id": "seg_1", "text": "hello", "duration": 1.0, "confidence": 0.99}, "stt"))
-    await asyncio.sleep(0.1)
+    await _wait_until(lambda: mock_intent_router.route.await_count == 1)
     
     assert len(events) == 2
     assert events[0].event_type == EventType.CONVERSATION_TURN_STARTED

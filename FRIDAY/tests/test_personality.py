@@ -46,6 +46,21 @@ def test_prompt_injection():
     assert "Explain concepts step-by-step" in prompt
 
 
+def test_personality_prompt_describes_explicit_only_memory_accurately():
+    injector = PersonalityPromptInjector()
+    config = StyleConfig(tone="focused", verbosity="concise", pacing="normal")
+
+    prompt = injector.get_style_instructions(config, PersonaMode.ENGINEERING)
+
+    assert "retain information long-term" in prompt
+    assert "only when the user explicitly asks" in prompt
+    assert "Never claim that you cannot remember past conversations" in prompt
+    assert "say you do not have it saved" in prompt
+    assert "offer to remember it now" in prompt
+    assert "Do not save it unless the user explicitly asks" in prompt
+    assert "I don't have the ability to remember" not in prompt
+
+
 @pytest.mark.asyncio
 async def test_presence_thinking_delay():
     from core.personality.presence import PresenceManager

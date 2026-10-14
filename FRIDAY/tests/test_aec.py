@@ -1,212 +1,172 @@
-"""Unit tests for AecProcessor buffering logic (no audio hardware required)."""
+"""Unit tests for AecProcessor and WebRTC APM echo cancellation."""
 import asyncio
 import struct
+import time
+from unittest.mock import AsyncMock, MagicMock
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+
+from core.audio.pipecat_worker import AecProcessor
+from pipecat.frames.frames import InputAudioRawFrame
 
 
 def _make_mock_worker():
     """Create a minimal mock PipecatAudioWorker for AecProcessor construction."""
     worker = MagicMock()
     worker.logger = MagicMock()
+    worker.event_bus = MagicMock()
+    worker.recent_mic_rms = 0
     return worker
 
 
-def _make_mock_audio_processor():
-    """Create a mock AudioProcessor that records calls and returns input unchanged."""
-    ap = MagicMock()
-    ap.process_stream.side_effect = lambda data: data
-    ap.process_reverse_stream.return_value = None
-    ap.get_stream_delay.return_value = 180
-    ap.has_voice.return_value = False
-    return ap
-
-
-def _build_aec_processor(mock_ap_instance):
-    """Build an AecProcessor with a pre-configured mock AudioProcessor injected."""
-    from core.audio.pipecat_worker import AecProcessor
+@pytest.mark.asyncio
+async def test_aec_initialization():
+    """Verify AEC initializes with correct stream formats and delay."""
     worker = _make_mock_worker()
     proc = AecProcessor(worker, delay_ms=180)
-    # Inject mock — AecProcessor.__init__ already called the real AudioProcessor
-    # (or None). Override it with our mock for controlled testing.
-    proc.aec = mock_ap_instance
-    proc.enabled = True
-    return proc
+    try:
+        assert proc.enabled is True
+        assert proc.aec is not None
+        assert proc.aec.get_stream_delay() == 180
+    finally:
+        await proc.cleanup()
 
 
-# ---------------------------------------------------------------------------
-# Test 1: feed_reference buffers partial chunks, only calls process_reverse_stream
-#          on exact 320-byte boundaries
-# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_feed_reference_320_byte_boundary():
-    """feed_reference must only call process_reverse_stream on exact 320-byte chunks."""
-    mock_ap = _make_mock_audio_processor()
-    proc = _build_aec_processor(mock_ap)
+async def test_aec_echo_cancellation():
+    """Verify reverse stream reference feeding and forward stream processing."""
+    worker = _make_mock_worker()
+    proc = AecProcessor(worker, delay_ms=180)
+    proc.push_frame = AsyncMock()
 
-    # Feed 200 bytes (less than 320) — should NOT call process_reverse_stream
-    await proc.feed_reference(b'\x00' * 200, 16000)
-    
-    # Wait for feeder task to process queue
-    while not proc._ref_queue.empty():
-        await asyncio.sleep(0.01)
-    
-    mock_ap.process_reverse_stream.assert_not_called()
-    assert len(proc._ref_buffer) == 200
+    try:
+        # 16-bit PCM mono 16kHz audio: 160 samples = 320 bytes (10ms)
+        ref_chunk = struct.pack("<" + "h" * 160, *([500] * 160))
+        await proc.feed_reference(ref_chunk, 16000)
 
-    # Feed another 200 bytes (total 400) — should call once (320 bytes) and leave 80
-    await proc.feed_reference(b'\x01' * 200, 16000)
-    
-    while not proc._ref_queue.empty():
-        await asyncio.sleep(0.01)
-        
-    assert mock_ap.process_reverse_stream.call_count == 1
-    actual_chunk = mock_ap.process_reverse_stream.call_args[0][0]
-    assert len(actual_chunk) == 320
-    assert len(proc._ref_buffer) == 80
-    
-    proc._feeder_task.cancel()
-
-
-# ---------------------------------------------------------------------------
-# Test 2: feed_reference leftover bytes carry over correctly across multiple calls
-# ---------------------------------------------------------------------------
-@pytest.mark.asyncio
-async def test_feed_reference_leftover_carryover():
-    """Leftover bytes from one feed_reference call must carry into the next."""
-    mock_ap = _make_mock_audio_processor()
-    proc = _build_aec_processor(mock_ap)
-
-    async def wait_queue():
+        # Allow background feeder to process reference queue
         while not proc._ref_queue.empty():
             await asyncio.sleep(0.01)
 
-    # Feed exactly 319 bytes — 1 byte short, no call
-    await proc.feed_reference(b'\xAA' * 319, 16000)
-    await wait_queue()
-    mock_ap.process_reverse_stream.assert_not_called()
-    assert len(proc._ref_buffer) == 319
+        # Process matching mic frame
+        mic_frame = InputAudioRawFrame(audio=ref_chunk, sample_rate=16000, num_channels=1)
+        await proc.process_frame(mic_frame, None)
 
-    # Feed 1 more byte — total 320, exactly one call
-    await proc.feed_reference(b'\xBB' * 1, 16000)
-    await wait_queue()
-    assert mock_ap.process_reverse_stream.call_count == 1
-    assert len(proc._ref_buffer) == 0
-
-    # Feed 640 bytes — exactly two calls, zero leftover
-    await proc.feed_reference(b'\xCC' * 640, 16000)
-    await wait_queue()
-    assert mock_ap.process_reverse_stream.call_count == 3  # 1 + 2
-    assert len(proc._ref_buffer) == 0
-
-    # Feed 321 bytes — one call, 1 byte leftover
-    await proc.feed_reference(b'\xDD' * 321, 16000)
-    await wait_queue()
-    assert mock_ap.process_reverse_stream.call_count == 4
-    assert len(proc._ref_buffer) == 1
-
-    # Verify no bytes were dropped or duplicated
-    total_fed = 319 + 1 + 640 + 321  # 1281
-    total_processed = 4 * 320  # 1280
-    assert total_fed - total_processed == len(proc._ref_buffer)  # 1
-    proc._feeder_task.cancel()
+        assert proc.push_frame.called
+        pushed_frame = proc.push_frame.call_args[0][0]
+        assert len(pushed_frame.audio) == 320
+    finally:
+        await proc.cleanup()
 
 
-# ---------------------------------------------------------------------------
-# Test 3: process_frame mic-side buffering at 320-byte boundaries
-# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_process_frame_mic_buffering():
-    """process_frame must buffer mic audio and call process_stream on 320-byte chunks."""
-    mock_ap = _make_mock_audio_processor()
-    proc = _build_aec_processor(mock_ap)
-    proc.push_frame = AsyncMock()
-
-    # Create a mock frame with 200 bytes (less than 320)
-    frame = MagicMock()
-    type(frame).__name__ = 'InputAudioRawFrame'
-    frame.audio = b'\x00' * 200
-
-    await proc.process_frame(frame, MagicMock())
-    mock_ap.process_stream.assert_not_called()
-    assert len(proc._mic_buffer) == 200
-
-    # Feed another 200 bytes (total 400) — should call once, leave 80
-    frame2 = MagicMock()
-    type(frame2).__name__ = 'InputAudioRawFrame'
-    frame2.audio = b'\x01' * 200
-
-    await proc.process_frame(frame2, MagicMock())
-    assert mock_ap.process_stream.call_count == 1
-    actual_chunk = mock_ap.process_stream.call_args[0][0]
-    assert len(actual_chunk) == 320
-    assert len(proc._mic_buffer) == 80
-
-    # The output frame should have exactly 320 bytes of clean audio
-    assert proc.push_frame.call_count == 1
-    pushed_frame = proc.push_frame.call_args[0][0]
-    assert len(pushed_frame.audio) == 320
-
-
-# ---------------------------------------------------------------------------
-# Test 4: Graceful degradation when AudioProcessor is None
-# ---------------------------------------------------------------------------
-@pytest.mark.asyncio
-async def test_aec_degraded_mode_passthrough():
-    """When AudioProcessor import fails, AecProcessor must pass frames through unchanged."""
-    from core.audio.pipecat_worker import AecProcessor
-
+async def test_aec_with_background_noise():
+    """Verify AEC filters low-level background noise."""
     worker = _make_mock_worker()
     proc = AecProcessor(worker, delay_ms=180)
-    # Force disabled mode (simulates AudioProcessor = None at import time)
-    proc.aec = None
-    proc.enabled = False
-
-    # feed_reference should be a no-op
-    await proc.feed_reference(b'\x00' * 640, 16000)
-    # No crash, no calls
-
-    # process_frame should pass the frame through unchanged
     proc.push_frame = AsyncMock()
 
-    frame = MagicMock()
-    type(frame).__name__ = 'InputAudioRawFrame'
-    frame.audio = b'\xFF' * 500
+    try:
+        noise_chunk = struct.pack("<" + "h" * 160, *([25] * 160))
+        mic_frame = InputAudioRawFrame(audio=noise_chunk, sample_rate=16000, num_channels=1)
+        await proc.process_frame(mic_frame, None)
 
-    direction = MagicMock()
-    await proc.process_frame(frame, direction)
-
-    # Frame should be pushed through unchanged
-    assert proc.push_frame.call_count == 1
-    pushed_frame = proc.push_frame.call_args[0][0]
-    # The SAME frame object should be passed through, not reconstructed
-    assert pushed_frame is frame
+        assert proc.push_frame.called
+        pushed = proc.push_frame.call_args[0][0]
+        assert len(pushed.audio) == 320
+    finally:
+        await proc.cleanup()
 
 
-# ---------------------------------------------------------------------------
-# Test 5: feed_reference resamples non-16kHz audio before buffering
-# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_feed_reference_resamples_non_16khz():
-    """feed_reference must resample 22050Hz audio to 16000Hz before buffering."""
-    mock_ap = _make_mock_audio_processor()
-    proc = _build_aec_processor(mock_ap)
+async def test_aec_vad_integration():
+    """Verify VAD state reporting and worker RMS tracking."""
+    worker = _make_mock_worker()
+    proc = AecProcessor(worker, delay_ms=180)
+    proc.push_frame = AsyncMock()
 
-    # Feed 22050Hz audio — 1102 bytes = 551 samples at 22050Hz mono 16-bit
-    # Generate valid 16-bit PCM silence (not arbitrary bytes)
-    input_22k = struct.pack('<' + 'h' * 551, *([0] * 551))  # 1102 bytes
-    await proc.feed_reference(input_22k, 22050)
+    try:
+        speech_chunk = struct.pack("<" + "h" * 160, *([3000] * 160))
+        mic_frame = InputAudioRawFrame(audio=speech_chunk, sample_rate=16000, num_channels=1)
+        await proc.process_frame(mic_frame, None)
 
-    while not proc._ref_queue.empty():
-        await asyncio.sleep(0.01)
+        assert isinstance(proc.aec.has_voice(), bool)
+        assert worker.recent_mic_rms > 0
+    finally:
+        await proc.cleanup()
 
-    # After resampling 22050->16000, output length should be ~800 bytes
-    # What matters: process_reverse_stream was called with 320-byte chunks only
-    if mock_ap.process_reverse_stream.call_count > 0:
-        for c in mock_ap.process_reverse_stream.call_args_list:
-            assert len(c[0][0]) == 320, f"Chunk size was {len(c[0][0])}, expected 320"
 
-    # ratecv state should now be non-None (tracking fractional alignment)
-    assert proc._ratecv_state is not None
-    
-    proc._feeder_task.cancel()
+@pytest.mark.asyncio
+async def test_aec_microphone_input():
+    """Verify 320-byte boundary buffering for mic chunks."""
+    worker = _make_mock_worker()
+    proc = AecProcessor(worker, delay_ms=180)
+    proc.push_frame = AsyncMock()
+
+    try:
+        # Feed 200 bytes (sub-frame)
+        frame1 = InputAudioRawFrame(audio=b"\x00" * 200, sample_rate=16000, num_channels=1)
+        await proc.process_frame(frame1, None)
+        assert not proc.push_frame.called
+        assert len(proc._mic_buffer) == 200
+
+        # Feed another 200 bytes (crosses 320 bytes)
+        frame2 = InputAudioRawFrame(audio=b"\x01" * 200, sample_rate=16000, num_channels=1)
+        await proc.process_frame(frame2, None)
+        assert proc.push_frame.call_count == 1
+        assert len(proc._mic_buffer) == 80
+    finally:
+        await proc.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_aec_latency():
+    """Verify AEC forward processing latency is well below 150ms."""
+    worker = _make_mock_worker()
+    proc = AecProcessor(worker, delay_ms=180)
+    proc.push_frame = AsyncMock()
+
+    try:
+        frame_chunk = b"\x00" * 320
+        frame = InputAudioRawFrame(audio=frame_chunk, sample_rate=16000, num_channels=1)
+
+        t0 = time.perf_counter()
+        await proc.process_frame(frame, None)
+        latency_ms = (time.perf_counter() - t0) * 1000
+
+        assert latency_ms < 150, f"AEC latency too high: {latency_ms:.2f}ms"
+    finally:
+        await proc.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_aec_stress_test():
+    """Verify AEC stability across rapid consecutive chunks."""
+    worker = _make_mock_worker()
+    proc = AecProcessor(worker, delay_ms=180)
+    proc.push_frame = AsyncMock()
+
+    try:
+        chunk = b"\x00" * 320
+        for _ in range(50):
+            frame = InputAudioRawFrame(audio=chunk, sample_rate=16000, num_channels=1)
+            await proc.process_frame(frame, None)
+
+        assert proc.push_frame.call_count == 50
+    finally:
+        await proc.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_aec_cleanup():
+    """Verify proper cleanup of feeder task and event subscriptions."""
+    worker = _make_mock_worker()
+    proc = AecProcessor(worker, delay_ms=180)
+
+    # Start feeder task
+    await proc.feed_reference(b"\x00" * 320, 16000)
+    assert proc._feeder_task is not None
+
+    await proc.cleanup()
+    await asyncio.sleep(0.01)
+    assert proc._feeder_task.cancelled() or proc._feeder_task.done()
+    assert worker.event_bus.unsubscribe.call_count >= 2

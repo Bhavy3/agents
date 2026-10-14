@@ -20,6 +20,7 @@ Respond ONLY with a valid JSON object. No explanations outside JSON.
 Available intents: {available_intents}, chat.
 
 If the user is greeting, chatting, or asking a general question with no clear system action (like restarting a worker or checking status), the intent MUST be 'chat', not 'help' or any other tool name.
+If the user asks to search the web, look something up, find current news, or tell them about a factual topic, use 'search_web' with a concise query. Use 'open_url' only when the user explicitly asks to open or launch a website in the browser; do not open a search page as a substitute for searching.
 
 Examples:
 User Input: hi
@@ -117,8 +118,11 @@ class LlmFallbackRouter:
                     streamed = await self.streaming_worker.stream_reasoning(context_str.strip(), correlation_id)
                     if streamed:
                         chat_response_text = streamed
+                    else:
+                        chat_response_text = "I’m still processing that. Please give me a moment and try again."
                 except Exception as e:
                     logger.error("llm_fallback_streaming_error", extra={"error": str(e)}, exc_info=True)
+                    chat_response_text = "I hit a temporary processing issue. Please try again in a moment."
             parameters["response_text"] = chat_response_text
         return Intent(name=intent_name, confidence=parsed.confidence, parameters=parameters, source="ollama_reasoning")
 

@@ -53,6 +53,13 @@ class BaseWorker(ABC):
     def should_stop(self) -> bool:
         return self._stop_event.is_set()
 
+    @should_stop.setter
+    def should_stop(self, value: bool) -> None:
+        if value:
+            self._stop_event.set()
+        else:
+            self._stop_event.clear()
+
     def heartbeat(self, task: str = "running") -> None:
         self.health.mark_alive(task)
 

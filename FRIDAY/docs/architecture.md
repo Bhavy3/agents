@@ -47,6 +47,21 @@ Restart attempts increment before relaunch decisions. Rapid repeated failures ar
 
 The supervisor coroutine is persistent for the worker lifetime. It repeatedly creates a fresh worker task, awaits exactly one run outcome, classifies the result, then either continues the supervision loop for restart or breaks after intentional stop/quarantine.
 
+## Local Memory
+
+- `MemoryWorker` stores validated memory records in SQLite; generated IDs are UUID-based, and an existing record is updated only when a write supplies its explicit ID.
+- Memory writes normalize and deduplicate repeated sentences. Approved facts require explicit approval; secrets, unsafe shell patterns, empty or oversized content, and secret-bearing metadata are rejected.
+- The conversation path creates an approved-fact write only for explicit leading requests such as “remember that …”, “remember my …”, “don’t forget that …”, or “save this: …”. Other turns are not automatically stored.
+- Retrieval uses deterministic term overlap, exact-phrase, type, confidence, approval, and recency scoring. Recency uses a 30-day half-life bounded to a 0.35 minimum multiplier.
+- Each text turn requests bounded recall through the event bus. Only validated, relevant content is injected into the router's chat instructions, with a 1,200-character cap; record metadata is not included.
+- Conversation summaries are deterministic extracts of supplied text and pass through the same validation and SQLite persistence path. Conversation turns are not automatically stored.
+
+## Web Search
+
+- `search_web` uses the keyless `ddgs` text-search library, returns at most five title/snippet pairs, and bounds the result text to 1,500 characters. `open_url` remains the separate browser-opening action.
+- Search requests and results use the existing `ACTION_REQUESTED` and `ACTION_COMPLETED` events. The orchestrator streams a short answer using the bounded results as explicitly untrusted reference data; search-result text is never routed back through the tool classifier.
+- Slow searches emit a spoken progress acknowledgment after one second. Search failures are logged and produce a concise spoken fallback.
+
 ## Rules
 
 - `main.py` only starts the runtime.

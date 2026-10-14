@@ -30,7 +30,9 @@ class RuntimeMode(StrEnum):
 class Settings:
     root_dir: Path
     queue_size: int = DEFAULT_QUEUE_SIZE
-    vad_stop_secs: float = 2.0
+    vad_stop_secs: float = 0.8
+    enable_presence_ack: bool = False
+    audio_enabled: bool = True
     dry_run: bool = DRY_RUN_MODE
     ollama_model: str = "qwen2.5-3b-instruct-q5_k_m"
     ollama_base_url: str = "http://127.0.0.1:8080"
@@ -103,7 +105,10 @@ def load_settings() -> Settings:
     mute_gate_delay = float(mute_gate_delay_str) if mute_gate_delay_str else 0.6
 
     vad_stop_secs_str = os.getenv("FRIDAY_VAD_STOP_SECS")
-    vad_stop_secs = float(vad_stop_secs_str) if vad_stop_secs_str else 2.0
+    vad_stop_secs = float(vad_stop_secs_str) if vad_stop_secs_str else 0.8
+
+    enable_presence_ack = os.getenv("FRIDAY_ENABLE_PRESENCE_ACK", "false").lower() == "true"
+    audio_enabled = os.getenv("FRIDAY_AUDIO_ENABLED", "true").lower() == "true"
 
     aec_delay_ms_str = os.getenv("FRIDAY_AEC_DELAY_MS")
     aec_delay_ms = int(aec_delay_ms_str) if aec_delay_ms_str else 180
@@ -137,6 +142,8 @@ def load_settings() -> Settings:
             audio_output_device=audio_output_device,
             audio_input_device=audio_input_device,
             vad_stop_secs=vad_stop_secs,
+            enable_presence_ack=enable_presence_ack,
+            audio_enabled=audio_enabled,
             mute_gate_delay=mute_gate_delay,
             aec_delay_ms=aec_delay_ms,
             aec_enable_ns=aec_enable_ns,
@@ -165,6 +172,8 @@ def load_settings() -> Settings:
             audio_output_device=audio_output_device,
             audio_input_device=audio_input_device,
             vad_stop_secs=vad_stop_secs,
+            enable_presence_ack=enable_presence_ack,
+            audio_enabled=audio_enabled,
             mute_gate_delay=mute_gate_delay,
             aec_delay_ms=aec_delay_ms,
             aec_enable_ns=aec_enable_ns,
@@ -181,6 +190,7 @@ def load_settings() -> Settings:
         tts_config_path=tts_config_path,
         audio_output_device=audio_output_device,
         audio_input_device=audio_input_device,
+        audio_enabled=audio_enabled,
             vad_stop_secs=vad_stop_secs,
         mute_gate_delay=mute_gate_delay,
             aec_delay_ms=aec_delay_ms,

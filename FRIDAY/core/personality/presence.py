@@ -24,28 +24,22 @@ class PresenceManager:
 
         # Randomized natural delay
         delay = (base_delay + (query_complexity * 1.5)) * multiplier
-        # Cap to avoid frustration
-        final_delay = min(delay, 3.0)
+        # Keep the listening/thinking transition natural, but never let it
+        # block routing for more than one second, regardless of complexity.
+        final_delay = min(delay, 1.0)
         
         await asyncio.sleep(final_delay)
 
-    def get_acknowledgment(self, config: StyleConfig) -> str:
+    def get_acknowledgment(self, config: StyleConfig, enable_presence_ack: bool = False) -> str:
         """Returns a short acknowledgment string if appropriate for the tone."""
+        if not enable_presence_ack:
+            return ""
+            
         import time
         now = time.time()
         
         if now - self._last_ack_time < self.ack_cooldown:
             return ""
             
-        if config.pacing == "fast" or config.verbosity == "concise":
-            return "" # No filler for fast modes
-        
-        acks = {
-            "focused": ["Got it.", "Confirmed.", "Processing."],
-            "patient": ["I see. Let's look into that.", "Understanding context...", "One moment, explaining now."],
-            "friendly": ["Sure thing!", "Happy to help with that.", "Let's see what we can find."],
-            "alert": ["Understood. Immediate action taken.", "On it."]
-        }
-        
         self._last_ack_time = time.time()
-        return random.choice(acks.get(config.tone, ["Understood."]))
+        return "Hmm."

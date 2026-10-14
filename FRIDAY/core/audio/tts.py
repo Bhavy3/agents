@@ -41,12 +41,21 @@ class TtsWorker(BaseWorker):
         self._stop_playback = threading.Event()
         self._text_buffer = ""
         self._synthesis_lock = asyncio.Lock()
-        
+        self._playback_active = False
+
         # Stats
         self.chunks_synthesized = 0
         self.interruptions = 0
         self.synthesis_errors = 0
         self.active_turn_id = None
+
+    @property
+    def playback_active(self) -> bool:
+        return self._playback_active
+
+    @playback_active.setter
+    def playback_active(self, value: bool) -> None:
+        self._playback_active = bool(value)
 
     async def run(self) -> None:
         # 1. Initialize voice

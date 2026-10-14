@@ -1,7 +1,9 @@
 import asyncio
+import re
 import time
-import logging
+import uuid
 from typing import Any
+
 from core.workers.base_worker import BaseWorker
 from core.events.bus import EventBus
 from core.events.event_types import EventType
@@ -10,6 +12,53 @@ from core.memory.memory_models import MemoryRecord, MemoryType
 from core.memory.memory_store import MemoryStore
 from core.memory.memory_validator import MemoryValidator
 from core.memory.memory_index import MemoryIndex
+
+
+def compress_memory_content(content: str) -> str:
+    normalized = " ".join(content.split())
+    sentences = re.split(r"(?<=[.!?])\s+", normalized)
+    unique_sentences: list[str] = []
+    seen: set[str] = set()
+    for sentence in sentences:
+        key = sentence.casefold()
+        if key and key not in seen:
+            unique_sentences.append(sentence)
+            seen.add(key)
+    return " ".join(unique_sentences)
+
+
+def summarize_memory_content(content: str, max_length: int = 1200) -> str:
+    compressed = compress_memory_content(content)
+    if len(compressed) <= max_length:
+        return compressed
+
+    sentences = re.split(r"(?<=[.!?])\s+", compressed)
+    important = re.compile(
+        r"\b(name|prefer|preference|like|likes|goal|want|need|must|always|never|cannot|can't|constraint|important|keep|preserve|avoid|requires)\b",
+        re.IGNORECASE,
+    )
+
+    def has_name(sentence: str) -> bool:
+        first_word = sentence.split(maxsplit=1)[0].strip(".,!?;:")
+        common_openers = {"a", "an", "i", "my", "the", "this", "user", "we"}
+        candidate_text = sentence
+        if first_word.casefold() in common_openers:
+            candidate_text = sentence[len(first_word):]
+        return bool(re.search(r"\b[A-Z][a-z]{2,}\b", candidate_text))
+
+    ranked = sorted(
+        enumerate(sentences),
+        key=lambda item: (bool(important.search(item[1])), has_name(item[1]), -item[0]),
+        reverse=True,
+    )
+    selected: set[int] = set()
+    used_length = 0
+    for index, sentence in ranked:
+        added_length = len(sentence) + (1 if selected else 0)
+        if sentence and used_length + added_length <= max_length:
+            selected.add(index)
+            used_length += added_length
+    return " ".join(sentence for index, sentence in enumerate(sentences) if index in selected)
 
 
 class MemoryWorker(BaseWorker):
@@ -47,8 +96,14 @@ class MemoryWorker(BaseWorker):
     async def _refresh_context(self) -> None:
         try:
             # Fetch pinned notes and preferences
-            pinned = await self.store.query(MemoryType.PINNED_NOTE, limit=5)
-            prefs = await self.store.query(MemoryType.PREFERENCE, limit=10)
+            pinned = [
+                record for record in await self.store.query(MemoryType.PINNED_NOTE, limit=5)
+                if self.validator.validate(record).allowed
+            ]
+            prefs = [
+                record for record in await self.store.query(MemoryType.PREFERENCE, limit=10)
+                if self.validator.validate(record).allowed
+            ]
             
             context_parts = []
             if pinned:
@@ -71,14 +126,48 @@ class MemoryWorker(BaseWorker):
         except Exception:
             self.logger.exception("context_refresh_failed")
 
+    async def _deny_write(self, record_id: str, reason: str | None, correlation_id: str | None) -> None:
+        self._denied_writes += 1
+        if self.metrics:
+            self.metrics.denied_memory_writes += 1
+        await self.event_bus.publish(Event.create(
+            EventType.MEMORY_DENIED,
+            {"id": record_id, "reason": reason or "memory_validation_failed"},
+            self.name,
+            correlation_id,
+        ))
+
     async def handle_write_request(self, event: Event) -> None:
         payload = event.payload
         try:
+            raw_content = payload.get("content")
+            if not isinstance(raw_content, str) or len(raw_content) > self.validator.max_content_length:
+                record_id = str(payload.get("id") or f"mem_{uuid.uuid4().hex}")
+                length = len(raw_content) if isinstance(raw_content, str) else 0
+                await self._deny_write(
+                    record_id,
+                    f"content_length_violation: {length}",
+                    event.correlation_id,
+                )
+                return
+
+            record_id = str(payload.get("id") or f"mem_{uuid.uuid4().hex}")
+            raw_validation = self.validator.validate_content(raw_content)
+            if not raw_validation.allowed:
+                await self._deny_write(record_id, raw_validation.reason, event.correlation_id)
+                return
+
             memory_type_str = payload.get("type", "preference")
+            memory_type = MemoryType(memory_type_str)
+            content = (
+                summarize_memory_content(raw_content)
+                if memory_type == MemoryType.CONVERSATION_SUMMARY
+                else compress_memory_content(raw_content)
+            )
             record = MemoryRecord(
-                id=payload.get("id", f"mem_{int(time.time() * 1000)}"),
-                type=MemoryType(memory_type_str),
-                content=payload["content"],
+                id=record_id,
+                type=memory_type,
+                content=content,
                 created_at=payload.get("created_at", time.time()),
                 updated_at=time.time(),
                 source=payload.get("source", "unknown"),
@@ -89,19 +178,11 @@ class MemoryWorker(BaseWorker):
 
             validation = self.validator.validate(record)
             if not validation.allowed:
-                self._denied_writes += 1
-                if self.metrics:
-                    self.metrics.denied_memory_writes += 1
-                await self.event_bus.publish(Event.create(
-                    EventType.MEMORY_DENIED,
-                    {"id": record.id, "reason": validation.reason},
-                    self.name,
-                    event.correlation_id
-                ))
+                await self._deny_write(record.id, validation.reason, event.correlation_id)
                 return
 
             start_time = time.time()
-            await self.store.save(record)
+            await self.store.save(record, allow_update=bool(payload.get("id")))
             latency = (time.time() - start_time) * 1000
 
             self._memories_stored += 1
@@ -127,9 +208,10 @@ class MemoryWorker(BaseWorker):
     async def handle_query_request(self, event: Event) -> None:
         payload = event.payload
         try:
-            query_text = payload.get("query", "")
+            query_text = str(payload.get("query", ""))[:500]
             memory_type_str = payload.get("type")
             memory_type = MemoryType(memory_type_str) if memory_type_str else None
+            result_limit = max(1, min(int(payload.get("limit", 10)), 10))
 
             self._recall_queries += 1
             if self.metrics:
@@ -139,26 +221,27 @@ class MemoryWorker(BaseWorker):
 
             # 1. Fetch from store
             if query_text:
-                records = await self.store.search_by_text(query_text)
+                records = await self.store.search_by_text(query_text, limit=200)
                 # Filter by type if requested
                 if memory_type:
                     records = [r for r in records if r.type == memory_type]
             else:
-                records = await self.store.query(memory_type)
+                records = await self.store.query(memory_type, limit=200)
 
             # 2. Rank deterministically
+            records = [record for record in records if self.validator.validate(record).allowed]
             ranked = self.index.rank(query_text, records)
+            if query_text:
+                ranked = [record for record in ranked if self.index.is_relevant(query_text, record)]
+            ranked = ranked[:result_limit]
             latency = (time.time() - start_time) * 1000
             if self.metrics:
                 self.metrics.memory_db_latency_ms = latency
 
             # 3. Format result
             results = [{
-                "id": r.id,
                 "type": r.type.value,
                 "content": r.content,
-                "confidence": r.confidence,
-                "metadata": r.metadata
             } for r in ranked]
 
             await self.event_bus.publish(Event.create(

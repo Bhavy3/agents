@@ -34,6 +34,9 @@ def route_by_rules(text: str) -> Intent | None:
     if not normalized:
         return None
 
+    if normalized in {"open google", "open google.com", "launch google", "launch google.com"}:
+        return Intent(IntentName.OPEN_URL, 1.0, {"url": "https://www.google.com"})
+
     if normalized in {"exit", "quit", "shutdown friday", "stop friday"}:
         return Intent(IntentName.EXIT, 1.0, {})
 
@@ -47,10 +50,16 @@ def route_by_rules(text: str) -> Intent | None:
         folder = text.strip()[len("open folder") :].strip() or "."
         return Intent(IntentName.LIST_DIR, 0.95, {"path": folder})
 
-    for prefix in ("search google for ", "google ", "search "):
+    for prefix in ("search the web for ", "search google for ", "search for ", "look up ", "google ", "search "):
         if normalized.startswith(prefix):
             query = text.strip()[len(prefix) :].strip()
             if query:
                 return Intent(IntentName.SEARCH_WEB, 0.95, {"query": query})
+
+    for prefix in ("tell me about ", "what's the news on ", "what is the latest news on ", "what's the latest news on "):
+        if normalized.startswith(prefix):
+            query = text.strip()[len(prefix) :].strip()
+            if query:
+                return Intent(IntentName.SEARCH_WEB, 0.9, {"query": query})
 
     return None

@@ -85,3 +85,60 @@ async def test_streaming_worker_cancellation():
     assert len(worker._active_tasks) == 0
     await bus.drain()
     await bus.stop()
+
+
+@pytest.mark.asyncio
+async def test_streaming_worker_timeout_emits_stream_timeout_event():
+    bus = EventBus()
+    await bus.start()
+    agg = ResponseAggregator(bus)
+
+    events = []
+    async def track(e):
+        events.append(e)
+    bus.subscribe(EventType.STREAM_TIMEOUT, track)
+
+    mock_ollama = MagicMock(spec=OllamaClient)
+    async def mock_stream(prompt):
+        await asyncio.sleep(1.0)
+        yield "late", True
+    mock_ollama.stream_generate = mock_stream
+    mock_ollama.model = "test-model"
+    mock_ollama.timeout_seconds = 0.1
+
+    worker = StreamingLlmWorker(bus, mock_ollama, agg, timeout_seconds=0.1)
+    result = await worker.stream_reasoning("test prompt")
+    await bus.drain()
+
+    assert result == ""
+    assert sum(1 for e in events if e.event_type == EventType.STREAM_TIMEOUT) == 1
+    assert len(worker._active_tasks) == 0
+    await bus.stop()
+
+
+@pytest.mark.asyncio
+async def test_streaming_worker_timeout_cleans_up_active_task_once():
+    bus = EventBus()
+    await bus.start()
+    agg = ResponseAggregator(bus)
+
+    timeout_events = []
+    async def track(e):
+        timeout_events.append(e)
+    bus.subscribe(EventType.STREAM_TIMEOUT, track)
+
+    mock_ollama = MagicMock(spec=OllamaClient)
+    async def mock_stream(prompt):
+        await asyncio.sleep(0.5)
+        yield "late", True
+    mock_ollama.stream_generate = mock_stream
+    mock_ollama.model = "test-model"
+
+    worker = StreamingLlmWorker(bus, mock_ollama, agg, timeout_seconds=0.05)
+    result = await worker.stream_reasoning("test prompt")
+    await bus.drain()
+
+    assert result == ""
+    assert len(timeout_events) == 1
+    assert len(worker._active_tasks) == 0
+    await bus.stop()

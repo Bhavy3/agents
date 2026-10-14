@@ -21,6 +21,7 @@ from core.recovery.healthcheck import HealthcheckWorker
 from core.recovery.recovery_manager import RecoveryManager
 from core.router.intent_router import IntentRouter
 from core.memory.memory_worker import MemoryWorker
+from core.workers.terminal_observer import TerminalObserverWorker
 from core.vision.screen_capture import ScreenCaptureWorker
 from core.vision.ocr_worker import OCRWorker
 from core.vision.window_monitor import WindowMonitorWorker
@@ -102,6 +103,7 @@ class FridayApp:
             self.streaming_worker,
             prompt_planner=self.prompt_planner,
             response_timeout_seconds=self.settings.ollama_timeout_seconds,
+            enable_presence_ack=getattr(self.settings, 'enable_presence_ack', False)
         )
         
         tts_worker = TtsWorker(
@@ -110,24 +112,26 @@ class FridayApp:
             config_path=self.settings.tts_config_path,
         )
         
+        runtime_workers = [
+            HealthcheckWorker(self.event_bus, interval_seconds=healthcheck_interval),
+            orchestrator,
+            self.tool_worker,
+            self.personality_worker,
+            self.workflow_worker,
+            self.memory_worker,
+            self.screen_capture,
+            self.ocr_worker,
+            self.window_monitor,
+            TerminalObserverWorker(self.event_bus),
+        ]
+        if getattr(self.settings, "audio_enabled", True):
+            runtime_workers[1:1] = [PipecatAudioWorker(self.event_bus), tts_worker]
+        else:
+            self.logger.info("audio_pipeline_disabled", extra={"reason": "FRIDAY_AUDIO_ENABLED=false"})
+
         self.supervisor = WorkerSupervisor(
             self.event_bus,
-            workers=[
-                HealthcheckWorker(self.event_bus, interval_seconds=healthcheck_interval),
-                # AudioTransportWorker(self.event_bus, input_device=self.settings.audio_input_device),
-                # VadWorker(self.event_bus, silence_threshold=0.0005),
-                # SttWorker(self.event_bus),
-                PipecatAudioWorker(self.event_bus),
-                orchestrator,
-                tts_worker,
-                self.tool_worker,
-                self.personality_worker,
-                self.workflow_worker,
-                self.memory_worker,
-                self.screen_capture,
-                self.ocr_worker,
-                self.window_monitor,
-            ],
+            workers=runtime_workers,
             metrics=self.metrics,
             heartbeat_timeout_seconds=self.settings.worker_heartbeat_timeout_seconds,
             max_restarts_per_minute=self.settings.max_restarts_per_minute,

@@ -15,14 +15,21 @@ try:
     from pipecat.pipeline.task import PipelineTask
     from pipecat.pipeline.runner import PipelineRunner
     from pipecat.transports.local.audio import LocalAudioTransport, LocalAudioTransportParams
-    from pipecat.services.whisper.stt import WhisperSTTService
     from pipecat.audio.vad.silero import SileroVADAnalyzer
     from pipecat.audio.vad.vad_analyzer import VADParams
     from pipecat.processors.audio.vad_processor import VADProcessor
     from pipecat.processors.frame_processor import FrameProcessor
-    from pipecat.frames.frames import TranscriptionFrame, AudioRawFrame, OutputAudioRawFrame, CancelFrame, InterruptionFrame
+    from pipecat.frames.frames import TranscriptionFrame, AudioRawFrame, OutputAudioRawFrame, CancelFrame, InterruptionFrame, InputAudioRawFrame
 except ImportError:
-    pass  # Allow tests to mock
+    pass  # Allow tests to mock Pipecat imports
+
+try:
+    from pipecat.services.whisper.stt import WhisperSTTService
+except ImportError as exc:
+    WhisperSTTService = None
+    _WHISPER_IMPORT_ERROR = exc
+else:
+    _WHISPER_IMPORT_ERROR = None
 
 from core.events.bus import EventBus
 from core.events.event_types import EventType
@@ -30,8 +37,19 @@ from core.events.models import Event
 from core.workers.base_worker import BaseWorker
 from core.config.settings import load_settings
 
+# Voice Re-Enable Staging Item 3: Calibrated VAD and verified audio input index
+AUDIO_INPUT_DEVICE = 1
+
+VAD_CONFIG = {
+    "start_secs": 0.15,  # Reduced from 0.2 to preserve early speech
+    "speech_timeout_secs": 0.5,
+    "extra_trigger_secs": 1.8,
+    "min_speech_duration": 0.4,
+    "confidence_threshold": 0.7,
+}
+
 class AecProcessor(FrameProcessor):
-    def __init__(self, worker: 'PipecatAudioWorker', delay_ms: int = 180, enable_ns: bool = False, enable_agc: bool = False):
+    def __init__(self, worker: 'PipecatAudioWorker', delay_ms: int = 180, enable_ns: bool = False, enable_agc: bool = False, enable_vad: bool = True):
         super().__init__()
         self.worker = worker
         self.logger = worker.logger
@@ -46,7 +64,7 @@ class AecProcessor(FrameProcessor):
         self._aec_lock = asyncio.Lock()
         
         if AudioProcessor is not None:
-            self.aec = AudioProcessor(enable_aec=True, enable_ns=enable_ns, enable_agc=enable_agc, enable_vad=False)
+            self.aec = AudioProcessor(enable_aec=True, enable_ns=enable_ns, ns_level=2, enable_agc=enable_agc, agc_mode=1, enable_vad=enable_vad)
             self.aec.set_stream_format(16000, 1)
             self.aec.set_reverse_stream_format(16000, 1)
             self.aec.set_stream_delay(delay_ms)
@@ -206,17 +224,34 @@ class MuteGateProcessor(FrameProcessor):
         await self.push_frame(frame, direction)
 
 class TranscriptionPublisher(FrameProcessor):
-    def __init__(self, worker: 'PipecatAudioWorker'):
+    def __init__(self, worker: object, logger: object | None = None):
         super().__init__()
-        self.worker = worker
-        self.event_bus = worker.event_bus
-        self.logger = worker.logger
+        if hasattr(worker, 'event_bus') and hasattr(worker, 'logger'):
+            self.worker = worker
+            self.event_bus = worker.event_bus
+            self.logger = logger or worker.logger
+        else:
+            self.worker = type(
+                'CompatWorker',
+                (),
+                {
+                    'event_bus': worker,
+                    'logger': logger,
+                    'is_tts_playing': False,
+                    'last_spoken_text': '',
+                    'last_spoken_time': 0.0,
+                    'mute_gate_delay': 0.0,
+                },
+            )()
+            self.event_bus = worker
+            self.logger = logger
         self.segment_start_time = time.perf_counter()
 
     async def process_frame(self, frame, direction):
         frame_type = type(frame).__name__
         
         if frame_type in ('UserStartedSpeakingFrame', 'VADUserStartedSpeakingFrame'):
+            self.worker.speech_started_at = time.perf_counter()
             recent_rms = getattr(self.worker, "recent_mic_rms", 0.0)
             is_playing = self.worker.is_tts_playing
             time_since_start = -1.0
@@ -240,6 +275,12 @@ class TranscriptionPublisher(FrameProcessor):
             payload = {"timestamp": time.time(), "amplitude": 1.0}
             await self.event_bus.publish(Event.create(EventType.SPEECH_STARTED, payload, "PipecatAudioWorker"))
             
+        if frame_type in ('UserStoppedSpeakingFrame', 'VADUserStoppedSpeakingFrame'):
+            started_at = getattr(self.worker, "speech_started_at", None)
+            duration = time.perf_counter() - started_at if started_at is not None else 0.0
+            payload = {"timestamp": time.time(), "duration": float(duration)}
+            await self.event_bus.publish(Event.create(EventType.SPEECH_ENDED, payload, "PipecatAudioWorker"))
+
         if type(frame).__name__ == 'TranscriptionFrame':
             self.logger.info("pipecat_transcription_frame_received", extra={"text": frame.text, "is_empty": not bool(frame.text.strip())})
             
@@ -541,232 +582,6 @@ class TtsOutputProcessor(FrameProcessor):
         await super().process_frame(frame, direction)
         await self.push_frame(frame, direction)
 
-class PipecatAudioWorker(BaseWorker):
-    def __init__(self, event_bus: EventBus):
-        super().__init__("pipecat_audio", event_bus)
-        self.is_tts_playing = False
-        self._lock = asyncio.Lock()
-        self.last_spoken_text = ""
-        self.last_spoken_time = 0.0
-        self.tts_processor: TtsOutputProcessor | None = None
-        
-        # Step 3: Rolling metrics for regression visibility
-        self.stream_end_fires: int = 0
-        self.safety_net_fires: int = 0
-        self._rolling_window: deque[str] = deque(maxlen=20)
-        
-        settings = load_settings()
-        self.mute_gate_delay = getattr(settings, "mute_gate_delay", 0.6)
-
-    def record_stream_end_fire(self) -> None:
-        self.stream_end_fires += 1
-        self._rolling_window.append("stream_end")
-        metrics = getattr(self.event_bus, "metrics", None)
-        if metrics and hasattr(metrics, "record_tts_completion"):
-            metrics.record_tts_completion("stream_end")
-
-    def record_safety_net_fire(self) -> None:
-        self.safety_net_fires += 1
-        self._rolling_window.append("safety_net")
-        metrics = getattr(self.event_bus, "metrics", None)
-        if metrics and hasattr(metrics, "record_tts_completion"):
-            metrics.record_tts_completion("safety_net")
-        
-        # Log CRITICAL if safety net fires on more than 1 in 20 turns in rolling window
-        safety_net_count = sum(1 for t in self._rolling_window if t == "safety_net")
-        if safety_net_count > 1:
-            self.logger.critical(
-                "pipecat_safety_net_threshold_exceeded",
-                extra={
-                    "safety_net_count": safety_net_count,
-                    "window_size": len(self._rolling_window),
-                    "total_stream_end_fires": self.stream_end_fires,
-                    "total_safety_net_fires": self.safety_net_fires,
-                }
-            )
-
-    async def run(self) -> None:
-        if self._debounce_task and not self._debounce_task.done():
-            self._debounce_task.cancel()
-        if self._completion_task and not self._completion_task.done():
-            self._completion_task.cancel()
-
-    async def _handle_turn_started(self, event: Event) -> None:
-        turn_id = event.payload.get("turn_id")
-        async with self._lock:
-            self._active_turn_id = turn_id
-            self._current_chunk_id = None
-            self._stream_ended_turn = None
-            if turn_id and turn_id in self._cancelled_turns:
-                self._cancelled_turns.remove(turn_id)
-
-    async def _handle_interrupted(self, event: Event) -> None:
-        turn_id = event.payload.get("turn_id")
-        async with self._lock:
-            if turn_id:
-                self._cancelled_turns.add(turn_id)
-            self._playback_active = False
-            self._active_turn_id = None
-            self._stream_ended_turn = None
-            if self._debounce_task and not self._debounce_task.done():
-                self._debounce_task.cancel()
-            if self._completion_task and not self._completion_task.done():
-                self._completion_task.cancel()
-
-    async def _handle_tts_chunk(self, event: Event) -> None:
-        audio_data = event.payload.get("audio_data")
-        sample_rate = event.payload.get("sample_rate", 22050)
-        chunk_id = event.payload.get("chunk_id")
-        turn_id = event.payload.get("turn_id")
-        
-        if not audio_data:
-            return
-
-        async with self._lock:
-            if turn_id and turn_id in self._cancelled_turns:
-                return
-
-            self._last_chunk_time = time.time()
-            self._current_chunk_id = chunk_id
-            if turn_id:
-                self._active_turn_id = turn_id
-            
-            if not self._playback_active:
-                self._playback_active = True
-                self._turn_start_time = time.perf_counter()
-                self._current_turn_duration = 0.0
-                self.logger.info("pipecat_firing_tts_playback_started", extra={"chunk_id": chunk_id, "turn_id": turn_id})
-                await self.event_bus.publish(
-                    Event.create(EventType.TTS_PLAYBACK_STARTED, {"chunk_id": chunk_id, "turn_id": turn_id}, "PipecatAudioWorker")
-                )
-                if self._debounce_task and not self._debounce_task.done():
-                    self._debounce_task.cancel()
-                self._debounce_task = asyncio.create_task(self._debounce_loop())
-                
-            chunk_duration = len(audio_data) / (sample_rate * 2)
-            self._current_turn_duration += chunk_duration
-
-        frame = OutputAudioRawFrame(
-            audio=audio_data,
-            sample_rate=sample_rate,
-            num_channels=1
-        )
-        if getattr(self.worker, "aec_processor", None):
-            await self.worker.aec_processor.feed_reference(audio_data, sample_rate)
-            
-        await self.push_frame(frame)
-
-    async def _handle_tts_stream_end(self, event: Event) -> None:
-        turn_id = event.payload.get("turn_id")
-        
-        async with self._lock:
-            # 1. Reject genuinely cancelled turns
-            if turn_id and turn_id in self._cancelled_turns:
-                self.logger.info("cancelled_tts_stream_end_ignored", extra={"received_turn": turn_id})
-                return
-
-            # 2. Reject stale stream ends from past turns
-            if turn_id and self._active_turn_id and turn_id != self._active_turn_id:
-                self.logger.warning("stale_tts_stream_end_ignored", extra={"received_turn": turn_id, "active_turn": self._active_turn_id})
-                return
-
-            # 3. Active playback: complete playback cleanly
-            if self._playback_active:
-                expected_end_time = self._turn_start_time + self._current_turn_duration
-                delay = expected_end_time - time.perf_counter()
-                
-                if self._completion_task and not self._completion_task.done():
-                    self._completion_task.cancel()
-                    
-                if delay > 0:
-                    self.logger.info("tts_stream_end_scheduling_completion", extra={"delay": round(delay, 2), "turn_id": turn_id})
-                    self._completion_task = asyncio.create_task(self._delayed_complete_playback(turn_id, delay, "stream_end"))
-                else:
-                    await self._complete_playback(turn_id, trigger="stream_end")
-                return
-
-            # 4. Inactive playback: check if turn was empty (no chunks generated)
-            if self._current_chunk_id is None:
-                await self._complete_playback(turn_id, trigger="stream_end")
-                return
-
-            # Chunks in flight: record pending stream end
-            self._stream_ended_turn = turn_id
-            self.logger.info("tts_stream_end_recorded_pending_playback", extra={"turn_id": turn_id})
-
-    async def _handle_tts_cancelled(self, event: Event) -> None:
-        turn_id = event.payload.get("turn_id")
-        async with self._lock:
-            if turn_id:
-                self._cancelled_turns.add(turn_id)
-            self._playback_active = False
-            self._active_turn_id = None
-            self._stream_ended_turn = None
-            if self._debounce_task and not self._debounce_task.done():
-                self._debounce_task.cancel()
-            if self._completion_task and not self._completion_task.done():
-                self._completion_task.cancel()
-            self.logger.info("pipecat_tts_cancelled_state_reset")
-
-    async def _delayed_complete_playback(self, turn_id: str | None, delay: float, trigger: str) -> None:
-        try:
-            await asyncio.sleep(delay)
-            async with self._lock:
-                if self._playback_active and self._active_turn_id == turn_id:
-                    await self._complete_playback(turn_id, trigger)
-        except asyncio.CancelledError:
-            pass
-
-    async def _complete_playback(self, turn_id: str | None, trigger: str) -> None:
-        self._playback_active = False
-        self._stream_ended_turn = None
-        if self._debounce_task and not self._debounce_task.done():
-            self._debounce_task.cancel()
-        if self._completion_task and not self._completion_task.done():
-            self._completion_task.cancel()
-        
-        if hasattr(self.worker, "record_stream_end_fire"):
-            self.worker.record_stream_end_fire()
-        self.logger.info("pipecat_firing_tts_playback_completed", extra={"trigger": trigger, "turn_id": turn_id})
-        await self.event_bus.publish(
-            Event.create(EventType.TTS_PLAYBACK_COMPLETED, {"chunk_id": self._current_chunk_id or "end", "turn_id": turn_id}, "PipecatAudioWorker")
-        )
-
-    async def _debounce_loop(self) -> None:
-        try:
-            while True:
-                await asyncio.sleep(0.1)
-                async with self._lock:
-                    if not self._playback_active:
-                        break
-                    # If stream end was recorded for active turn, complete cleanly
-                    if self._stream_ended_turn and self._stream_ended_turn == self._active_turn_id:
-                        await self._complete_playback(self._active_turn_id, trigger="stream_end")
-                        break
-                    # Safety net only (2.5s idle threshold) in case TTS_STREAM_END is dropped
-                    if time.time() - self._last_chunk_time > 2.5:
-                        self._playback_active = False
-                        self._stream_ended_turn = None
-                        if hasattr(self.worker, "record_safety_net_fire"):
-                            self.worker.record_safety_net_fire()
-                        self.logger.warning(
-                            "pipecat_tts_playback_completed_safety_net_triggered",
-                            extra={
-                                "elapsed": round(time.time() - self._last_chunk_time, 2),
-                                "active_turn": self._active_turn_id,
-                                "current_chunk": self._current_chunk_id,
-                            }
-                        )
-                        await self.event_bus.publish(
-                            Event.create(EventType.TTS_PLAYBACK_COMPLETED, {"chunk_id": self._current_chunk_id or "end", "turn_id": self._active_turn_id}, "PipecatAudioWorker")
-                        )
-                        break
-        except asyncio.CancelledError:
-            pass
-
-    async def process_frame(self, frame, direction):
-        await super().process_frame(frame, direction)
-        await self.push_frame(frame, direction)
 
 class PipecatAudioWorker(BaseWorker):
     def __init__(self, event_bus: EventBus):
@@ -861,36 +676,76 @@ class PipecatAudioWorker(BaseWorker):
         self.logger.info("pipecat_worker_starting", extra={"detail": "Starting Pipecat Audio Worker"})
         
         output_device = getattr(load_settings(), "audio_output_device", None)
-        if isinstance(output_device, str):
+        input_device = getattr(load_settings(), "audio_input_device", None)
+        
+        try:
+            import pyaudio
+            p = pyaudio.PyAudio()
+            dev_count = p.get_device_count()
+            
+            if isinstance(output_device, int):
+                if output_device < 0 or output_device >= dev_count or p.get_device_info_by_index(output_device).get("maxOutputChannels", 0) <= 0:
+                    self.logger.warning("invalid_output_device_falling_back_to_default", extra={"index": output_device})
+                    output_device = None
+            elif isinstance(output_device, str):
+                for i in range(dev_count):
+                    info = p.get_device_info_by_index(i)
+                    if output_device.lower() in info.get("name", "").lower() and info.get("maxOutputChannels", 0) > 0:
+                        output_device = i
+                        break
+                if isinstance(output_device, str):
+                    output_device = None
+
+            if isinstance(input_device, int):
+                if input_device < 0 or input_device >= dev_count or p.get_device_info_by_index(input_device).get("maxInputChannels", 0) <= 0:
+                    self.logger.warning("invalid_input_device_falling_back_to_default", extra={"index": input_device})
+                    input_device = None
+            elif isinstance(input_device, str):
+                for i in range(dev_count):
+                    info = p.get_device_info_by_index(i)
+                    if input_device.lower() in info.get("name", "").lower() and info.get("maxInputChannels", 0) > 0:
+                        input_device = i
+                        break
+                if isinstance(input_device, str):
+                    input_device = None
+                    
+            p.terminate()
+        except Exception as e:
+            self.logger.debug("audio_device_selection_skipped", extra={"error": str(e)})
+            if isinstance(output_device, str): output_device = None
+            if isinstance(input_device, str): input_device = None
+
+        if input_device is None and AUDIO_INPUT_DEVICE is not None:
             try:
                 import pyaudio
                 p = pyaudio.PyAudio()
-                for i in range(p.get_device_count()):
-                    info = p.get_device_info_by_index(i)
-                    if output_device.lower() in info.get("name", "").lower() and info.get("maxOutputChannels") > 0:
-                        output_device = i
-                        break
+                if AUDIO_INPUT_DEVICE < p.get_device_count() and p.get_device_info_by_index(AUDIO_INPUT_DEVICE).get("maxInputChannels", 0) > 0:
+                    input_device = AUDIO_INPUT_DEVICE
                 p.terminate()
-            except ImportError as e:
-                self.logger.debug("pyaudio_not_installed_device_selection_skipped", extra={"error": str(e)})
-            if isinstance(output_device, str):
-                output_device = None
+            except Exception:
+                pass
 
         transport = LocalAudioTransport(
             LocalAudioTransportParams(
                 audio_in_enabled=True,
                 audio_out_enabled=True,
                 output_device_index=output_device,
+                input_device_index=input_device,
                 audio_out_sample_rate=22050,
                 audio_in_sample_rate=16000
             )
         )
 
+        if WhisperSTTService is None:
+            raise RuntimeError("Whisper STT dependencies are unavailable.") from _WHISPER_IMPORT_ERROR
+
         stt = WhisperSTTService(
             device="cpu",
             compute_type="int8",
             settings=WhisperSTTService.Settings(
-                model="tiny"
+                model="base.en",
+                language="en",
+                no_speech_prob=0.6,
             )
         )
 
@@ -901,12 +756,17 @@ class PipecatAudioWorker(BaseWorker):
         aec_enable_agc = getattr(settings, "aec_enable_agc", False)
         
         self.logger.info("vad_config", extra={"stop_secs": vad_stop_secs})
-        vad = SileroVADAnalyzer(params=VADParams(stop_secs=vad_stop_secs))
+        import os
+        vad_min_volume = float(os.getenv("FRIDAY_VAD_MIN_VOLUME", "0.01"))
+        vad_confidence = float(os.getenv("FRIDAY_VAD_CONFIDENCE", str(VAD_CONFIG["confidence_threshold"])))
+        vad_start_secs = float(os.getenv("FRIDAY_VAD_START_SECS", str(VAD_CONFIG["start_secs"])))
+        vad = SileroVADAnalyzer(params=VADParams(start_secs=vad_start_secs, stop_secs=vad_stop_secs, min_volume=vad_min_volume, confidence=vad_confidence))
         vad_processor = VADProcessor(vad_analyzer=vad)
 
         self.aec_processor = AecProcessor(self, delay_ms=aec_delay_ms, enable_ns=aec_enable_ns, enable_agc=aec_enable_agc)
 
         self.tts_processor = TtsOutputProcessor(self)
+        
         pipeline = Pipeline([
             transport.input(),
             self.aec_processor,
@@ -962,3 +822,7 @@ class PipecatAudioWorker(BaseWorker):
                 await self.tts_processor.cleanup()
             if getattr(self, "aec_processor", None):
                 await self.aec_processor.cleanup()
+            # PyAudio invokes its callback from a background thread.  Allow
+            # callbacks already in flight to observe the stopped pipeline
+            # before asyncio.run() closes the event loop.
+            await asyncio.sleep(0.1)

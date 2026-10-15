@@ -49,6 +49,35 @@ _WORKFLOW_REQUEST = re.compile(
     re.IGNORECASE,
 )
 
+import re as _ground_re
+
+WEB_ANSWER_NOT_FOUND = "I could not find that in the search results."
+_GROUND_NUMBER_RE = _ground_re.compile(r"\d+(?:\.\d+)?")
+_GROUND_URL_RE = _ground_re.compile(r"https?://[^\s)\]>\"']+")
+_GROUND_MARKERS_RE = _ground_re.compile(
+    r"<<<BEGIN_UNTRUSTED_WEB_SEARCH_RESULTS>>>|<<<END_UNTRUSTED_WEB_SEARCH_RESULTS>>>"
+    r"|UNTRUSTED|reference data|\[WEB SEARCH[^\]]*\]",
+    _ground_re.IGNORECASE,
+)
+
+
+def ground_web_answer(answer: str, results: str) -> str:
+    """Return the answer only if every number in it appears in the search results."""
+    cleaned = " ".join(_GROUND_MARKERS_RE.sub("", answer or "").split())
+    if not cleaned:
+        return WEB_ANSWER_NOT_FOUND
+    for number in _GROUND_NUMBER_RE.findall(cleaned):
+        if not _ground_re.search(
+            rf"(?<![\d.]){_ground_re.escape(number)}(?![\d.])", results or ""
+        ):
+            return WEB_ANSWER_NOT_FOUND
+    results_lower = (results or "").lower()
+    for match in _GROUND_URL_RE.findall(cleaned):
+        url = match.rstrip(".,;:!?").rstrip("/")
+        if url.lower() not in results_lower:
+            return WEB_ANSWER_NOT_FOUND
+    return cleaned
+
 
 @dataclass(slots=True)
 class PendingWebSearch:
@@ -343,6 +372,15 @@ class OrchestratorWorker(BaseWorker):
                     "I found web results, but couldn't prepare a spoken answer.",
                 )
                 return
+
+            grounded = ground_web_answer(answer, results)
+            if grounded != answer.strip():
+                self.logger.warning(
+                    "web_answer_blocked",
+                    extra={"original_answer": answer, "results_chars": len(results)},
+                )
+            answer = grounded
+
             await self.event_bus.publish(Event.create(
                 EventType.RESPONSE_READY,
                 {"text": answer, "turn_id": pending.turn_id},

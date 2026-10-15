@@ -900,7 +900,7 @@ class OrchestratorWorker(BaseWorker):
             try:
                 await asyncio.shield(routing_task)
             except Exception as e:
-                self.logger.warning("routing_task_await_failed_in_stream_completed", extra={"error": str(e)})
+                self.logger.error("routing_task_await_failed_in_stream_completed", extra={"error": str(e)})
 
         async with self._state_lock:
             if self._turn_ids_by_correlation_id.get(event.correlation_id or "") != turn_id:

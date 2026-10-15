@@ -114,6 +114,15 @@ class ToolWorker(BaseWorker):
             await self.event_bus.publish(Event.create(EventType.RESPONSE_READY, {"text": err_msg}, self.name, correlation_id))
             return ToolResult(False, "", err_msg)
 
+        if name == "search_web" and not (isinstance(params.get("query"), str) and params.get("query").strip()):
+            await self.event_bus.publish(Event.create(
+                EventType.ACTION_FAILED,
+                {"tool_name": "search_web", "error": "missing_query"},
+                self.name,
+                correlation_id,
+            ))
+            return ToolResult(False, "", "missing_query")
+
         start_time = time.time()
         await self.event_bus.publish(Event.create(
             EventType.ACTION_STARTED,

@@ -711,7 +711,7 @@ class PipecatAudioWorker(BaseWorker):
                     
             p.terminate()
         except Exception as e:
-            self.logger.debug("audio_device_selection_skipped", extra={"error": str(e)})
+            self.logger.warning("audio_device_selection_skipped", extra={"error": str(e)})
             if isinstance(output_device, str): output_device = None
             if isinstance(input_device, str): input_device = None
 

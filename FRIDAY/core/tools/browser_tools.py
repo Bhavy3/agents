@@ -1,6 +1,7 @@
 import asyncio
 import html
 import logging
+from urllib.parse import urlsplit
 import webbrowser
 from ddgs import DDGS
 from .tool_models import ToolResult
@@ -18,7 +19,17 @@ class BrowserTools:
     async def open_url(self, url: str) -> ToolResult:
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
-            
+
+        try:
+            parsed = urlsplit(url)
+            host = parsed.hostname or ""
+        except Exception:
+            return ToolResult(False, "", "invalid_url")
+
+        tld = host.rsplit(".", 1)[-1] if "." in host else ""
+        if "." not in host or not (tld.isalpha() and len(tld) >= 2):
+            return ToolResult(False, "", "invalid_url")
+
         try:
             # webbrowser.open is blocking in some OS, but usually fine. 
             # We use to_thread to be safe.

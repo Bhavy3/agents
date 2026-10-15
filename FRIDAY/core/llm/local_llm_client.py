@@ -185,7 +185,7 @@ class LocalLLMClient:
                     response = await client.get(tags_url, timeout=3.0)
                     self._available = (response.status_code == 200)
         except Exception as e:
-            print(f"\n[DIAGNOSTIC] health_check threw exception: {repr(e)}")
+            self.logger.error("llm_health_check_failed", extra={"error": repr(e)}, exc_info=True)
             self._available = False
 
         if self._available:

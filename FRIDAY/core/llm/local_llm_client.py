@@ -376,7 +376,7 @@ class LocalLLMClient:
                 self._client = None
             raise
         except Exception as e:
-            self.logger.warning("llm_generate_exception", extra={"error": str(e)})
+            self.logger.error("llm_generate_exception", extra={"error": str(e)})
         finally:
             self.logger.info(
                 "llm_stream_complete",

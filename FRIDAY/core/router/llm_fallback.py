@@ -138,9 +138,7 @@ class LlmFallbackRouter:
         try:
             intent_name = IntentName(parsed.intent)
         except ValueError:
-            # We can still check if it's a valid tool even if it's not in IntentName
-            # because IntentName is an outdated enum. We'll force it to lowercase string for checks.
-            pass
+            logger.warning("intent_enum_mismatch", extra={"raw_value": parsed.intent})
             
         intent_str = parsed.intent.lower()
         if intent_str != "chat" and intent_str not in self.valid_tools:
@@ -152,10 +150,7 @@ class LlmFallbackRouter:
             intent_name = IntentName(intent_str)
         except ValueError:
             intent_name = IntentName.UNKNOWN
-            # We'll just pass the raw string if we want, but the dataclass Intent requires IntentName.
-            # Actually, the dataclass Intent requires an IntentName Enum.
-            # If it's a valid tool but not in IntentName Enum, we might have a type issue.
-            pass
+            logger.warning("intent_enum_mismatch", extra={"raw_value": intent_str})
 
         parameters = _extract_parameters(raw_response)
 

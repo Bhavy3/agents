@@ -76,3 +76,36 @@ RULES
 - A step that hangs over 5 minutes: record it and continue.
 - At the end run git status --porcelain and paste it. It must match step 1 (only AGENTS.md modified, plus the stray file).
 - In chat print only the Part 5A table and the path to REPORT.md.
+## Current Project Handoff — 2026-10-17
+
+The earlier read-only audit instruction above described a prior task. The user later granted standing approval for text-mode Omega completion on branch `omega-finish`, including milestone commits, focused regression tests, and updates to this handoff. Do not infer approval to edit voice/audio code from that approval.
+
+### Current state
+
+- M0 checkpoint: `3ffe8f2 chore: checkpoint existing FRIDAY work before Omega completion`.
+- M1 text-mode fixes: `015cb4a fix: bound workflow context and log text mode failures`.
+- M2 adds a text-mode evidence harness at `scripts/verify_text_mode.py`, a memory DB path override (`FRIDAY_MEMORY_DB_PATH`), normalization for planner `input` aliases on `search_web` and `remember`, and a temporal grounding check for time-sensitive queries. M2 verification passed (300 passed, 3 warnings in an isolated copy) and commit `cc56c90 fix: verify text mode workflows and web grounding` is saved.
+- Use only `.venv\Scripts\python.exe`. Keep `PYTHONDONTWRITEBYTECODE=1` and use pytest `-p no:cacheprovider`; run the full suite from an isolated copy excluding `.git`, `.venv`, caches, model files, and database files.
+- Keep evidence and scratch files under `C:\Users\bhavy\Desktop\friday_audit`. The harness uses `friday_memory_audit_copy.db` and `text_mode_ledger.jsonl`; do not point it at or mutate the project memory database.
+- `FRIDAY_AUDIO_ENABLED=false` is required for text-mode checks. Do not modify `core/audio/*`, VAD, TTS, AEC, or Pipecat files without fresh user authorization.
+- The original written Omega acceptance document has not been supplied or located in the repository. Do not invent numeric acceptance criteria or create `docs/OMEGA.md` until the user supplies that source text.
+- Recovery requires the user to stop and restart their own local llama-server. Never terminate a user-owned server process as part of the harness.
+
+### Verification commands
+
+```powershell
+$env:PYTHONDONTWRITEBYTECODE = '1'
+.\.venv\Scripts\python.exe -B -m pytest tests -q -p no:cacheprovider
+.\.venv\Scripts\python.exe -B scripts\verify_text_mode.py --mode local
+.\.venv\Scripts\python.exe -B scripts\verify_text_mode.py --mode live --idle-seconds 0
+.\.venv\Scripts\python.exe -B scripts\verify_text_mode.py --mode workflow
+.\.venv\Scripts\python.exe -B scripts\verify_text_mode.py --mode idle --idle-seconds 600
+.\.venv\Scripts\python.exe -B scripts\verify_text_mode.py --mode recovery
+```
+
+### Voice re-enable checklist
+
+1. Obtain explicit authorization before changing `core/audio/*` or enabling audio.
+2. Review and resolve audio exception handlers and diagnostics in the authorized scope.
+3. With microphone and speaker available, run three prompts and one long-answer interruption; capture transcripts, `SPEECH_STARTED`, `TTS_PLAYBACK_CANCELLED`, and safety-net warning timestamps.
+4. Run audio/VAD/TTS/AEC tests and confirm shutdown leaves no audio worker or playback process running.

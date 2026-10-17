@@ -2,6 +2,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 @dataclass(slots=True, frozen=True)
@@ -18,11 +29,11 @@ class RuntimeSnapshot:
     def as_dict(self) -> dict[str, object]:
         return {
             "created_at": self.created_at.isoformat(),
-            "active_workers": self.active_workers,
-            "queue_state": self.queue_state,
-            "metrics": self.metrics,
-            "task_counts": self.task_counts,
-            "memory_usage": self.memory_usage,
-            "event_rates": self.event_rates,
-            "anomalies": self.anomalies,
+            "active_workers": _json_safe(self.active_workers),
+            "queue_state": _json_safe(self.queue_state),
+            "metrics": _json_safe(self.metrics),
+            "task_counts": _json_safe(self.task_counts),
+            "memory_usage": _json_safe(self.memory_usage),
+            "event_rates": _json_safe(self.event_rates),
+            "anomalies": _json_safe(self.anomalies),
         }

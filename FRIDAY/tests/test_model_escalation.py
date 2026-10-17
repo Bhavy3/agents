@@ -11,6 +11,20 @@ from core.llm.llm_worker import LlmWorker
 from core.router.complexity_detector import detect_query_complexity
 
 
+def _make_launchable(mm: ModelManager) -> None:
+    """Use this test module as a valid stand-in for the two required files."""
+    mm.server_bin = __file__
+    mm.model_paths = {"3b": __file__, "7b": __file__}
+
+
+def _health_response(status: int) -> MagicMock:
+    response = MagicMock()
+    response.status = status
+    response.__enter__.return_value = response
+    response.__exit__.return_value = False
+    return response
+
+
 def test_detect_complexity_simple():
     """Simple queries trigger 'simple'."""
     assert detect_query_complexity("weather") == "simple"
@@ -38,6 +52,7 @@ async def test_model_switch_3b_to_7b():
     bus.subscribe(EventType.RESPONSE_READY, lambda e: events.append(e))
 
     mm = ModelManager(event_bus=bus)
+    _make_launchable(mm)
     old_proc = MagicMock()
     mm.process = old_proc
     mm.current_model = "3b"
@@ -46,6 +61,7 @@ async def test_model_switch_3b_to_7b():
     try:
         with patch("subprocess.Popen", return_value=new_proc) as mock_popen, \
              patch("asyncio.sleep", new_callable=AsyncMock), \
+             patch("urllib.request.urlopen", return_value=_health_response(200)), \
              patch("os.system") as mock_system:
 
             await mm.switch_model("7b", "user_request")
@@ -54,7 +70,7 @@ async def test_model_switch_3b_to_7b():
             old_proc.terminate.assert_called_once()
             mock_popen.assert_called_once()
             cmd_called = mock_popen.call_args[0][0]
-            assert any("qwen2.5-7b-instruct-q4_k_m.gguf" in arg for arg in cmd_called)
+            assert mm.model_paths["7b"] in cmd_called
             assert mm.current_model == "7b"
             assert mm.process == new_proc
 
@@ -75,6 +91,7 @@ async def test_model_switch_7b_to_3b():
     bus.subscribe(EventType.RESPONSE_READY, lambda e: events.append(e))
 
     mm = ModelManager(event_bus=bus)
+    _make_launchable(mm)
     old_proc = MagicMock()
     mm.process = old_proc
     mm.current_model = "7b"
@@ -83,6 +100,7 @@ async def test_model_switch_7b_to_3b():
     try:
         with patch("subprocess.Popen", return_value=new_proc) as mock_popen, \
              patch("asyncio.sleep", new_callable=AsyncMock), \
+             patch("urllib.request.urlopen", return_value=_health_response(200)), \
              patch("os.system") as mock_system:
 
             await mm.switch_model("3b", "simple_query")
@@ -91,7 +109,7 @@ async def test_model_switch_7b_to_3b():
             old_proc.terminate.assert_called_once()
             mock_popen.assert_called_once()
             cmd_called = mock_popen.call_args[0][0]
-            assert any("qwen2.5-3b-instruct-q5_k_m.gguf" in arg for arg in cmd_called)
+            assert mm.model_paths["3b"] in cmd_called
             assert mm.current_model == "3b"
             assert mm.process == new_proc
 
@@ -142,6 +160,7 @@ async def test_beep_on_escalate():
 def test_vram_freed_on_switch():
     """Verify VRAM tracking and that unload precedes load avoiding VRAM overlap."""
     mm = ModelManager()
+    _make_launchable(mm)
     lifecycle = []
     
     proc_mock = MagicMock()
@@ -168,9 +187,100 @@ def test_vram_freed_on_switch():
 
     with patch("subprocess.Popen", side_effect=fake_popen), \
          patch("asyncio.sleep", new_callable=AsyncMock), \
+         patch("urllib.request.urlopen", return_value=_health_response(200)), \
          patch("os.system"):
         asyncio.run(mm.load_model("7b"))
 
     assert lifecycle == ["unloaded", "loaded"], "Must unload previous model before loading new model to prevent VRAM spike"
     if vram_before is not None:
         assert vram_before >= 0
+
+
+@pytest.mark.asyncio
+async def test_command_uses_configured_gpu_layers(tmp_path, monkeypatch):
+    """The offload count is configurable and defaults away from a risky full offload."""
+    server = tmp_path / "llama-server.exe"
+    model = tmp_path / "model.gguf"
+    server.touch()
+    model.touch()
+    monkeypatch.setenv("FRIDAY_LLAMA_NGL", "12")
+    mm = ModelManager(health_timeout_seconds=0.1, health_poll_interval_seconds=0.01)
+    mm.server_bin = str(server)
+    mm.model_paths = {"3b": str(model), "7b": str(model)}
+    process = MagicMock()
+
+    with patch("subprocess.Popen", return_value=process) as mock_popen, \
+         patch("urllib.request.urlopen", return_value=_health_response(200)):
+        assert await mm.load_model("7b") is True
+
+    command = mock_popen.call_args.args[0]
+    assert command[command.index("-ngl") + 1] == "12"
+    assert mm.current_model == "7b"
+
+
+@pytest.mark.asyncio
+async def test_failed_target_rolls_back_and_emits_failure(tmp_path):
+    """A target returning non-200 is killed and the prior model is restored."""
+    server = tmp_path / "llama-server.exe"
+    model = tmp_path / "model.gguf"
+    server.touch()
+    model.touch()
+    bus = EventBus()
+    await bus.start()
+    failures = []
+    bus.subscribe(EventType.LLM_FAILURE, lambda event: failures.append(event))
+
+    mm = ModelManager(
+        event_bus=bus,
+        health_timeout_seconds=0.05,
+        health_poll_interval_seconds=0.01,
+    )
+    mm.server_bin = str(server)
+    mm.model_paths = {"3b": str(model), "7b": str(model)}
+    old_process = MagicMock()
+    failed_target = MagicMock()
+    rollback_process = MagicMock()
+    mm.process = old_process
+    mm.current_model = "3b"
+
+    try:
+        with patch("subprocess.Popen", side_effect=[failed_target, rollback_process]), \
+             patch.object(mm, "_wait_for_health", new_callable=AsyncMock, side_effect=[False, True]), \
+             patch("os.system"):
+            assert await mm.switch_model("7b", "test_failure") is False
+
+        failed_target.terminate.assert_called_once()
+        old_process.terminate.assert_called_once()
+        assert mm.current_model == "3b"
+        assert mm.process is rollback_process
+        await bus.drain()
+        assert len(failures) == 1
+        assert failures[0].payload["model"] == "7b"
+        assert failures[0].payload["rolled_back"] is True
+    finally:
+        await bus.stop()
+
+
+@pytest.mark.asyncio
+async def test_healthy_target_is_the_only_successful_switch(tmp_path):
+    """A target becomes active only after the health endpoint returns HTTP 200."""
+    server = tmp_path / "llama-server.exe"
+    model = tmp_path / "model.gguf"
+    server.touch()
+    model.touch()
+    mm = ModelManager(health_timeout_seconds=0.1, health_poll_interval_seconds=0.01)
+    mm.server_bin = str(server)
+    mm.model_paths = {"3b": str(model), "7b": str(model)}
+    old_process = MagicMock()
+    target_process = MagicMock()
+    mm.process = old_process
+    mm.current_model = "3b"
+
+    with patch("subprocess.Popen", return_value=target_process), \
+         patch("urllib.request.urlopen", return_value=_health_response(200)), \
+         patch("os.system"):
+        assert await mm.switch_model("7b", "healthy_target") is True
+
+    assert mm.current_model == "7b"
+    assert mm.process is target_process
+    old_process.terminate.assert_called_once()

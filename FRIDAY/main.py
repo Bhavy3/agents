@@ -18,6 +18,12 @@ def main() -> None:
         help="Run continuous runtime validation (burn-in mode) instead of interactive terminal mode.",
     )
     parser.add_argument(
+        "--validate-runtime",
+        dest="burn_in",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
         "--duration-seconds",
         type=float,
         default=300.0,

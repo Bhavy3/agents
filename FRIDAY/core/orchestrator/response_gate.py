@@ -50,3 +50,10 @@ class ResponseReadinessGate:
         task = self._gate_tasks.get(turn_id)
         if task and not task.done():
             task.cancel()
+
+    def has_pending(self, turn_id: str | None) -> bool:
+        """Return whether a turn is currently waiting for readiness."""
+        if not turn_id:
+            return False
+        task = self._gate_tasks.get(turn_id)
+        return task is not None and not task.done()

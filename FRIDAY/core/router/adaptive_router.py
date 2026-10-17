@@ -41,7 +41,7 @@ class AdaptiveRouter:
                 # User wants fast answer on complex query: tradeoff
                 return ("3b", "complex_query_urgent_use_3b_fast")
 
-    async def route(self, utterance: str):
+    async def route(self, utterance: str) -> Tuple[str, str]:
         """Execute routing decision."""
         target_model, reason = await self.decide_model(utterance)
 

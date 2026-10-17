@@ -15,16 +15,32 @@ class CognitiveWorker(BaseWorker):
     Main synchronization coordinator (Brain Stem).
     Coordinates VAD, STT, LLM, TTS, and Workflows into a single cognitive stream.
     """
-    def __init__(self, event_bus: EventBus):
+    def __init__(
+        self,
+        event_bus: EventBus,
+        state_engine: CognitiveStateEngine | None = None,
+        *,
+        cognitive_state: CognitiveStateEngine | None = None,
+    ):
         super().__init__("cognition", event_bus)
-        self.state_engine = CognitiveStateEngine(event_bus)
+        if state_engine is not None and cognitive_state is not None and state_engine is not cognitive_state:
+            raise ValueError("state_engine and cognitive_state must reference the same engine")
+        self.state_engine = state_engine or cognitive_state or CognitiveStateEngine(event_bus)
         self.attention = AttentionManager(event_bus)
         self.clock = RuntimeClock()
         
         self.logger = logging.getLogger("cognition.worker")
 
     async def run(self) -> None:
-        # Subscribe to critical lifecycle events
+        # Canonical production lifecycle events.
+        self.event_bus.subscribe(EventType.SPEECH_STARTED, self._handle_speech_started)
+        self.event_bus.subscribe(EventType.SPEECH_ENDED, self._handle_speech_ended)
+        self.event_bus.subscribe(EventType.CONVERSATION_TURN_STARTED, self._handle_turn_started)
+        self.event_bus.subscribe(EventType.ASSISTANT_RESPONSE_STARTED, self._handle_assistant_response_started)
+        self.event_bus.subscribe(EventType.ASSISTANT_RESPONSE_COMPLETED, self._handle_assistant_response_completed)
+        self.event_bus.subscribe(EventType.ASSISTANT_RESPONSE_CANCELLED, self._handle_assistant_response_cancelled)
+
+        # Legacy compatibility events retained for existing tests and callers.
         self.event_bus.subscribe(EventType.USER_SPEECH, self._handle_user_speech)
         self.event_bus.subscribe(EventType.ASSISTANT_RESPONSE, self._handle_assistant_response)
         self.event_bus.subscribe(EventType.ACTION_REQUEST, self._handle_action_started)
@@ -38,41 +54,35 @@ class CognitiveWorker(BaseWorker):
         if status == "started":
             self.logger.info("speech_interruption_detected")
             await self.attention.acquire_attention("user_speech", AttentionPriority.CRITICAL_INTERRUPTION)
-            await self.state_engine.update_state(active_speaker="user", listening=True, speaking=False)
-            await self.state_engine.set_turn_state(TurnState.LISTENING)
-            
-            # Notify that state changed
-            await self.event_bus.publish(Event.create(
-                EventType.STATE_UPDATED,
-                {"reason": "user_speech_started"},
-                self.name,
-                event.correlation_id
-            ))
+            await self.state_engine.apply_event(event)
         elif status == "ended":
-            await self.state_engine.update_state(listening=False)
+            await self.state_engine.apply_event(event)
             await self.attention.release_attention("user_speech")
+
+    async def _handle_speech_started(self, event: Event) -> None:
+        """Handle the canonical live VAD event emitted by production audio."""
+        self.logger.info("speech_interruption_detected")
+        await self.attention.acquire_attention("user_speech", AttentionPriority.CRITICAL_INTERRUPTION)
+        await self.state_engine.apply_event(event)
+
+    async def _handle_speech_ended(self, event: Event) -> None:
+        await self.state_engine.apply_event(event)
+        await self.attention.release_attention("user_speech")
+
+    async def _handle_turn_started(self, event: Event) -> None:
+        await self.state_engine.apply_event(event)
+
+    async def _handle_assistant_response_started(self, event: Event) -> None:
+        await self.state_engine.apply_event(event)
+
+    async def _handle_assistant_response_completed(self, event: Event) -> None:
+        await self.state_engine.apply_event(event)
+
+    async def _handle_assistant_response_cancelled(self, event: Event) -> None:
+        await self.state_engine.apply_event(event)
     async def _handle_assistant_response(self, event: Event):
         """Assistant response start/completed."""
-        status = event.payload.get("status")
-        turn_id = event.payload.get("turn_id")
-        
-        if status == "started":
-            state = await self.state_engine.get_state()
-            if state.active_speaker == "user" or state.listening:
-                return
-
-            if turn_id:
-                success = await self.state_engine.acquire_turn(turn_id)
-                if success:
-                    await self.state_engine.update_state(active_speaker="assistant", speaking=True, active_turn_id=turn_id)
-                    await self.state_engine.set_turn_state(TurnState.RESPONDING)
-                    await self.event_bus.publish(Event.create(EventType.STATE_UPDATED, {"reason": "assistant_response_started"}, self.name))
-        
-        elif status == "completed":
-            if turn_id:
-                await self.state_engine.release_turn(turn_id)
-                await self.state_engine.update_state(speaking=False, active_turn_id=None)
-                await self.event_bus.publish(Event.create(EventType.STATE_UPDATED, {"reason": "assistant_response_completed"}, self.name))
+        await self.state_engine.apply_event(event)
 
     async def _handle_action_started(self, event: Event):
         """Action/Tool execution started."""

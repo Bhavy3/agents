@@ -1,11 +1,14 @@
 import asyncio
 import pytest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch, MagicMock
 
 from core.orchestrator.conversation import OrchestratorWorker
 from core.events.bus import EventBus
 from core.events.event_types import EventType
 from core.events.models import Event
+from core.llm.stream_aggregator import ResponseAggregator
+from core.llm.streaming_worker import StreamingLlmWorker
 
 @pytest.fixture(autouse=True)
 def mock_thinking_delay():
@@ -193,6 +196,45 @@ async def test_orchestrator_normal_chat_response_still_works():
     await orchestrator.stop()
     await task
     await bus.stop()
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_applies_route_to_next_stream():
+    """The orchestrator's tuple decision controls the shared streaming worker."""
+    bus = EventBus()
+    await bus.start()
+    aggregator = ResponseAggregator(bus)
+    observed = []
+
+    class FakeClient:
+        model = "configured-backend"
+
+        def set_model(self, model, reason=""):
+            self.model = model
+            self.reason = reason
+
+        async def stream_generate(self, prompt):
+            observed.append((self.model, self.reason))
+            yield "ok", True
+
+    streaming_worker = StreamingLlmWorker(bus, FakeClient(), aggregator)
+    orchestrator = OrchestratorWorker(bus, None, streaming_worker)
+    orchestrator.adaptive_router = SimpleNamespace(
+        route=AsyncMock(return_value=("7b", "complex_query_needs_7b"))
+    )
+    orchestrator._route_and_execute = AsyncMock()
+
+    try:
+        await orchestrator._initiate_turn("analyze the trends", "correlation")
+        if orchestrator._routing_task is not None:
+            await orchestrator._routing_task
+
+        assert await streaming_worker.stream_reasoning("prompt", "correlation") == "ok"
+        assert observed == [("7b", "complex_query_needs_7b")]
+        assert streaming_worker.selected_model == "7b"
+        assert streaming_worker.selection_reason == "complex_query_needs_7b"
+    finally:
+        await bus.stop()
 
 
 @pytest.mark.asyncio

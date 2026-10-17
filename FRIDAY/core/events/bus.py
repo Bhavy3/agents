@@ -144,6 +144,13 @@ class EventBus:
                 continue
             
             event.transition(EventState.PROCESSING)
+            if self.metrics is not None:
+                self.metrics.record_turn_event(
+                    event.event_type,
+                    event.correlation_id,
+                    event.created_at,
+                    event.payload,
+                )
             handlers = [
                 *self._subscribers.get(event.event_type, []),
                 *self._wildcard_subscribers,

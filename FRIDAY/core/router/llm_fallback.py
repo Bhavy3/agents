@@ -35,6 +35,12 @@ User Input: search google for latest news
 """
 
 
+_EXPLICIT_MEMORY_REQUEST = re.compile(
+    r"^\s*(?:remember\s+(?:that|this|my|our)\s+|remember\s*:\s*|don't\s+forget\s+(?:that\s+)?|do\s+not\s+forget\s+(?:that\s+)?|save\s+this\s*:\s*)(.+?)\s*$",
+    re.IGNORECASE,
+)
+
+
 def _extract_parameters(raw_response: str) -> dict:
     raw = (raw_response or "").strip()
 
@@ -135,22 +141,27 @@ class LlmFallbackRouter:
 
         await self._emit(EventType.LLM_RESPONSE_RECEIVED, {"intent": parsed.intent, "confidence": parsed.confidence, "latency": metrics.latency_seconds}, correlation_id)
 
-        try:
-            intent_name = IntentName(parsed.intent)
-        except ValueError:
-            logger.warning("intent_enum_mismatch", extra={"raw_value": parsed.intent})
-            
-        intent_str = parsed.intent.lower()
-        if intent_str != "chat" and intent_str not in self.valid_tools:
-            print(f"[DIAGNOSTIC] Tool '{intent_str}' not found in valid_tools. Falling back to chat.")
+        intent_str = parsed.intent.strip().lower()
+        if intent_str == "remember" and not _EXPLICIT_MEMORY_REQUEST.match(text):
+            logger.warning("remember_intent_rejected", extra={"raw_value": parsed.intent})
             intent_str = "chat"
-            
-        # Re-assign intent_name to IntentName.CHAT if it was forced to chat
+
         try:
             intent_name = IntentName(intent_str)
         except ValueError:
-            intent_name = IntentName.UNKNOWN
             logger.warning("intent_enum_mismatch", extra={"raw_value": intent_str})
+            intent_name = IntentName.CHAT
+            intent_str = "chat"
+
+        if intent_name == IntentName.UNKNOWN:
+            logger.warning("unknown_intent_rejected", extra={"raw_value": parsed.intent})
+            intent_name = IntentName.CHAT
+            intent_str = "chat"
+
+        if intent_str != "chat" and intent_str not in self.valid_tools:
+            print(f"[DIAGNOSTIC] Tool '{intent_str}' not found in valid_tools. Falling back to chat.")
+            intent_str = "chat"
+            intent_name = IntentName.CHAT
 
         parameters = _extract_parameters(raw_response)
 

@@ -107,6 +107,13 @@ class LocalLLMClient:
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
+        # ``model`` is the model configured on the one backend endpoint.  A
+        # routing decision may select a different logical model label for a
+        # request, but changing that label must not imply that llama.cpp has
+        # loaded different weights in-process.
+        self.backend_model = model
+        self.requested_model = model
+        self.selection_reason = "configured"
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
         self.temperature = temperature
@@ -124,6 +131,21 @@ class LocalLLMClient:
         parsed = urlparse(self.base_url)
         self._host = parsed.hostname or "127.0.0.1"
         self._port = parsed.port or (11434 if self.provider == LlmProvider.OLLAMA else 8080)
+
+    def set_requested_model(self, model: str, reason: str = "") -> None:
+        """Record the logical model selected for the next request.
+
+        The local client keeps one configured HTTP endpoint.  In particular,
+        a llama.cpp endpoint cannot safely replace loaded weights merely by
+        changing a request field, so the requested label is tracked
+        separately from ``backend_model``.
+        """
+        self.requested_model = str(model)
+        self.selection_reason = str(reason)
+
+    # Compatibility spelling for small fake clients and callers that use the
+    # more general model-selection terminology.
+    select_model = set_requested_model
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:

@@ -53,9 +53,9 @@ pytest
 ## Runtime Validation
 
 ```powershell
-python main.py --validate-runtime --duration-seconds 28800
+python main.py --burn-in --duration-seconds 28800
 ```
 
-This runs an 8-hour validation pass with simulated commands, malformed events, queue pressure, worker crashes, metrics, and memory monitoring.
+This runs an 8-hour validation pass with simulated commands, malformed events, queue pressure, worker crashes, metrics, and memory monitoring. The current CLI flag is `--burn-in`; `--validate-runtime` remains a hidden compatibility alias for older launch scripts.
 
 The validation report includes uptime, restart stats, memory trends, event throughput, detected anomalies, and failure replay data.

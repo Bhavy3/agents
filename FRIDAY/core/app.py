@@ -28,6 +28,8 @@ from core.vision.window_monitor import WindowMonitorWorker
 from core.vision.visual_context import VisualContextManager
 from core.validation.runtime_validator import RuntimeValidationReport, RuntimeValidator, ValidationCrashWorker
 from core.personality.personality_worker import PersonalityWorker
+from core.cognition.cognitive_state import CognitiveStateEngine
+from core.cognition.cognitive_worker import CognitiveWorker
 from core.workflows.workflow_worker import WorkflowWorker
 from core.workflows.prompt_planner import PromptPlanner
 from core.workers.supervisor import WorkerSupervisor
@@ -56,6 +58,13 @@ class FridayApp:
             handler_timeout_seconds=self.settings.event_handler_timeout_seconds,
         )
         self.command_history = CommandHistory()
+        self.cognitive_state_engine = CognitiveStateEngine(self.event_bus)
+        # Public compatibility alias for callers that use the shorter name.
+        self.cognitive_state = self.cognitive_state_engine
+        self.cognitive_worker = CognitiveWorker(
+            self.event_bus,
+            state_engine=self.cognitive_state_engine,
+        )
         
         from core.llm.local_llm_client import create_llm_client
         self.ollama_client = create_llm_client(
@@ -97,13 +106,14 @@ class FridayApp:
         from core.orchestrator.conversation import OrchestratorWorker
         from core.audio.pipecat_worker import PipecatAudioWorker
         
-        orchestrator = OrchestratorWorker(
+        self.orchestrator = OrchestratorWorker(
             self.event_bus,
             self.intent_router,
             self.streaming_worker,
             prompt_planner=self.prompt_planner,
             response_timeout_seconds=self.settings.ollama_timeout_seconds,
-            enable_presence_ack=getattr(self.settings, 'enable_presence_ack', False)
+            enable_presence_ack=getattr(self.settings, 'enable_presence_ack', False),
+            cognitive_state=self.cognitive_state_engine,
         )
         
         tts_worker = TtsWorker(
@@ -114,7 +124,8 @@ class FridayApp:
         
         runtime_workers = [
             HealthcheckWorker(self.event_bus, interval_seconds=healthcheck_interval),
-            orchestrator,
+            self.cognitive_worker,
+            self.orchestrator,
             self.tool_worker,
             self.personality_worker,
             self.workflow_worker,

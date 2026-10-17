@@ -1,5 +1,6 @@
 import asyncio
 import html
+import inspect
 import re
 import time
 import uuid
@@ -15,12 +16,14 @@ from core.llm.streaming_worker import StreamingLlmWorker
 from core.personality.prompt_personality import PersonalityPromptInjector
 from core.personality.models import PersonaMode, StyleConfig
 from core.personality.presence import PresenceManager
-from core.router.rules import Intent, IntentName
+from core.personality.presence_timing import PresenceTimingEngine
+from core.router.rules import FAST_CHAT_SOURCE, Intent, IntentName
 from core.workflows.prompt_planner import PromptPlanner
+from core.orchestrator.response_gate import ResponseReadinessGate
 from core.memory.memory_index import MemoryIndex
 from core.memory.memory_validator import MemoryValidator
 from core.router.complexity_detector import detect_query_complexity
-from core.llm.model_manager import ModelManager
+from core.cognition.cognitive_state import CognitiveStateEngine, TurnState
 
 DEGRADED_ROUTER_MESSAGE = "I'm unable to reach the conversation router right now. Please try again."
 MEMORY_QUERY_TIMEOUT_SECONDS = 0.2
@@ -102,7 +105,8 @@ class OrchestratorWorker(BaseWorker):
         response_timeout_seconds: float = 30.0,
         interrupt_cooldown_seconds: float = 1.5,
         enable_presence_ack: bool = False,
-        cognitive_state: Optional[Any] = None,
+        cognitive_state: CognitiveStateEngine | None = None,
+        state_engine: CognitiveStateEngine | None = None,
     ) -> None:
         super().__init__("orchestrator", event_bus)
         self.intent_router = intent_router
@@ -116,12 +120,20 @@ class OrchestratorWorker(BaseWorker):
         self.enable_presence_ack = enable_presence_ack
         self.injector = PersonalityPromptInjector()
         self.presence = PresenceManager()
-        self.model_manager = ModelManager(event_bus)
+        self.presence_timing = PresenceTimingEngine(event_bus)
+        self.response_gate = ResponseReadinessGate(event_bus, self.presence_timing)
         self.response_timeout = 10  # seconds
         from core.router.adaptive_router import AdaptiveRouter
-        self.adaptive_router = AdaptiveRouter(self.model_manager)
-        from core.cognition.cognitive_state import CognitiveStateEngine
-        self.cognitive_state = cognitive_state or CognitiveStateEngine(event_bus)
+        # The streaming worker is the sole owner of the active request model.
+        # The legacy ModelManager remains available to its direct callers, but
+        # ordinary routing must not launch a second llama-server process.
+        self.adaptive_router = AdaptiveRouter()
+        if cognitive_state is not None and state_engine is not None and cognitive_state is not state_engine:
+            raise ValueError("cognitive_state and state_engine must reference the same engine")
+        self.cognitive_state = cognitive_state or state_engine or CognitiveStateEngine(event_bus)
+        # Keep the explicit name available to callers while retaining the
+        # historical cognitive_state attribute used by the orchestrator.
+        self.state_engine = self.cognitive_state
         
         self._state_lock = asyncio.Lock()
         self.active_turn_id: str | None = None
@@ -137,6 +149,7 @@ class OrchestratorWorker(BaseWorker):
         self.active_speaker: str | None = None
         self.context: list[dict[str, str]] = []
         self._routing_task: asyncio.Task | None = None
+        self._turn_start_pending = False
         self._last_activity_time = time.perf_counter()
         
         self._chat_confirmed = False
@@ -275,12 +288,14 @@ class OrchestratorWorker(BaseWorker):
             self.name,
             correlation_id,
         ))
-        await self.event_bus.publish(Event.create(
-            EventType.ASSISTANT_RESPONSE_COMPLETED,
-            {"text": message, "turn_id": pending.turn_id},
-            self.name,
-            correlation_id,
-        ))
+        await self._publish_assistant_lifecycle(
+            Event.create(
+                EventType.ASSISTANT_RESPONSE_COMPLETED,
+                {"text": message, "turn_id": pending.turn_id},
+                self.name,
+                correlation_id,
+            )
+        )
         await self.event_bus.publish(Event.create(
             EventType.RESPONSE_READY,
             {"text": message, "turn_id": pending.turn_id},
@@ -299,6 +314,13 @@ class OrchestratorWorker(BaseWorker):
         if task is not None and not task.done():
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+
+    async def _publish_assistant_lifecycle(self, event: Event) -> bool:
+        """Apply a response lifecycle transition before queueing its event."""
+        if not await self.cognitive_state.apply_event(event):
+            return False
+        await self.event_bus.publish(event)
+        return True
 
     async def _announce_web_search_if_slow(self, correlation_id: str, turn_id: str) -> None:
         try:
@@ -469,12 +491,14 @@ class OrchestratorWorker(BaseWorker):
                 context_str = context_str[:497] + "..."
             self._latest_memory_context = context_str
 
-    async def _handle_speech_started(self, event: Event) -> None:
-        """User started speaking. Interrupt any active assistant response."""
+    async def _handle_speech_started(self, event: Event) -> bool:
+        """User started speaking; return whether a new turn may be started."""
         now = time.perf_counter()
         self._last_activity_time = now
         
         async with self._state_lock:
+            if self._turn_start_pending and self.active_turn_id is None:
+                return False
             pending_search = any(
                 pending.turn_id == self.active_turn_id
                 for pending in self._pending_web_searches.values()
@@ -483,12 +507,14 @@ class OrchestratorWorker(BaseWorker):
                 self.active_speaker == "assistant"
                 or self._routing_task is not None
                 or pending_search
+                or self.response_gate.has_pending(self.active_turn_id)
+                or (self._turn_start_pending and self.active_turn_id is not None)
             )
             
             if is_interruption:
                 # Interrupt storm debounce
                 if now < self._interrupt_cooldown_until:
-                    return
+                    return False
                     
                 self._interrupt_cooldown_until = now + self.interrupt_cooldown_seconds
                 self.interruptions += 1
@@ -504,16 +530,33 @@ class OrchestratorWorker(BaseWorker):
                     }
                 
                 self._routing_task = None
+                self._turn_start_pending = False
+                if self._routing_task is None and self.active_turn_id == turn_id_to_interrupt:
+                    self.active_turn_id = None
             else:
                 routing_task_to_cancel = None
                 turn_id_to_interrupt = None
                 
             self.active_speaker = "user"
+
+        # The orchestrator owns the live user-speech transition.  STT/CLI
+        # callers reuse this path, so normalize those legacy triggers to the
+        # same canonical state transition without emitting a second event.
+        state_event = event
+        if event.event_type not in {EventType.SPEECH_STARTED, EventType.USER_SPEECH}:
+            state_event = Event.create(
+                EventType.USER_SPEECH,
+                {"status": "started"},
+                self.name,
+                event.correlation_id,
+            )
+        await self.cognitive_state.apply_event(state_event)
         
         if is_interruption:
             self.logger.info("conversation_interrupted", extra={"turn_id": turn_id_to_interrupt})
             
             # Cancel active routing/inference
+            self.response_gate.cancel_wait(turn_id_to_interrupt)
             if routing_task_to_cancel and not routing_task_to_cancel.done():
                 routing_task_to_cancel.cancel()
             self.streaming_worker.cancel_all()
@@ -526,6 +569,7 @@ class OrchestratorWorker(BaseWorker):
                         self.name
                     )
                 )
+        return True
 
     async def _handle_user_speech(self, event: Event) -> None:
         """Handle user speech events to keep active speaker aligned."""
@@ -540,8 +584,8 @@ class OrchestratorWorker(BaseWorker):
         if not text:
             return
             
-        await self._handle_speech_started(event)
-        asyncio.create_task(self._initiate_turn(text, event.correlation_id))
+        if await self._handle_speech_started(event):
+            await self._schedule_turn(text, event.correlation_id)
 
     async def _handle_cli_text(self, event: Event) -> None:
         """Process text directly from CLI."""
@@ -550,8 +594,15 @@ class OrchestratorWorker(BaseWorker):
             return
             
         # Cancel active turn if CLI is used
-        await self._handle_speech_started(event)
-        asyncio.create_task(self._initiate_turn(text, event.correlation_id))
+        if await self._handle_speech_started(event):
+            await self._schedule_turn(text, event.correlation_id)
+
+    async def _schedule_turn(self, text: str, correlation_id: str | None) -> None:
+        async with self._state_lock:
+            if self._turn_start_pending:
+                return
+            self._turn_start_pending = True
+        asyncio.create_task(self._initiate_turn(text, correlation_id))
 
     async def _initiate_turn(self, text: str, correlation_id: str | None) -> None:
         correlation_id = correlation_id or str(uuid.uuid4())
@@ -571,14 +622,14 @@ class OrchestratorWorker(BaseWorker):
             if len(self.context) > self.max_context_turns * 2:
                 self.context = self.context[-(self.max_context_turns * 2):]
         
-        await self.event_bus.publish(
-            Event.create(
-                EventType.CONVERSATION_TURN_STARTED,
-                {"turn_id": turn_id, "speaker": "user"},
-                self.name,
-                correlation_id
-            )
+        turn_started = Event.create(
+            EventType.CONVERSATION_TURN_STARTED,
+            {"turn_id": turn_id, "speaker": "user"},
+            self.name,
+            correlation_id,
         )
+        await self.cognitive_state.apply_event(turn_started)
+        await self.event_bus.publish(turn_started)
         
         await self.event_bus.publish(
             Event.create(
@@ -604,9 +655,6 @@ class OrchestratorWorker(BaseWorker):
                     correlation_id,
                 ))
         
-        # Human presence: Simulated thinking delay
-        await self.presence.simulate_thinking_delay(self.current_style)
-        
         # Human presence: Acknowledgment
         ack = self.presence.get_acknowledgment(self.current_style, self.enable_presence_ack)
         if ack:
@@ -623,17 +671,37 @@ class OrchestratorWorker(BaseWorker):
         recent_turns = [turn["content"] for turn in self.context[:-1]]
         await self.cognitive_state.update_tone(text, history=recent_turns)
 
-        await self.adaptive_router.route(text)
+        selected_model, selection_reason = await self.adaptive_router.route(text)
+        selector = getattr(self.streaming_worker, "set_model", None)
+        if callable(selector):
+            selection_result = selector(selected_model, selection_reason)
+            if inspect.isawaitable(selection_result):
+                await selection_result
 
+        owns_turn = False
         async with self._state_lock:
             if self.active_turn_id == turn_id:
+                self._turn_start_pending = False
                 # Yield to assistant
                 self.active_speaker = "assistant"
+                owns_turn = True
                 
                 # Spawn routing task so Orchestrator remains unblocked
                 self._routing_task = asyncio.create_task(
                     self._route_and_execute(text, turn_id, correlation_id)
                 )
+
+        if owns_turn:
+            # Keep the shared authority aligned during routing, before the
+            # stream-start event makes the assistant physically speak.
+            await self.cognitive_state.update_state(
+                active_turn_id=turn_id,
+                active_speaker="assistant",
+                turn_state=TurnState.THINKING,
+                assistant_busy=True,
+                speaking=False,
+                listening=False,
+            )
 
     async def _handle_personality_update(self, event: Event) -> None:
         self.current_mode = PersonaMode(event.payload["persona_mode"])
@@ -649,6 +717,14 @@ class OrchestratorWorker(BaseWorker):
         start_time = time.perf_counter()
         deferred_web_search: str | None = None
         try:
+            ready = await self.response_gate.wait_for_readiness(
+                turn_id,
+                text_length=len(text),
+                momentum=0.0,
+            )
+            if not ready:
+                return
+
             if _EXPLICIT_MEMORY_REQUEST.match(text):
                 response_text = "I'll remember that."
                 async with self._state_lock:
@@ -791,13 +867,21 @@ class OrchestratorWorker(BaseWorker):
                         )
                     )
 
-                # Chat intent: get the response text and surface it to the terminal
-                response_text = intent.parameters.get("response_text", intent.parameters.get("text", ""))
+                # A fast-chat intent has already passed the conservative local
+                # classifier.  Stream it directly instead of asking the LLM to
+                # classify it and then asking the same LLM to answer it.
+                if intent.source == FAST_CHAT_SOURCE:
+                    response_text = await self.streaming_worker.stream_reasoning(
+                        self._build_chat_prompt(text, self.context, chat_instructions),
+                        correlation_id,
+                    )
+                else:
+                    response_text = intent.parameters.get("response_text", intent.parameters.get("text", ""))
                 if response_text:
                     async with self._state_lock:
                         if self.active_turn_id == turn_id:
                             self.context.append({"role": "assistant", "content": response_text})
-                    if intent.source != "ollama_reasoning":
+                    if intent.source not in {"ollama_reasoning", FAST_CHAT_SOURCE}:
                         await self._publish_direct_response(response_text, turn_id, correlation_id)
                     await self.event_bus.publish(
                         Event.create(
@@ -869,24 +953,52 @@ class OrchestratorWorker(BaseWorker):
                         if self.active_speaker == "assistant":
                             self.active_speaker = None
 
+    @staticmethod
+    def _build_chat_prompt(
+        text: str,
+        context: list[dict[str, str]],
+        chat_instructions: str,
+    ) -> str:
+        """Build the normal chat prompt without adding a second classifier call."""
+        context_str = chat_instructions + "\n\n" if chat_instructions else ""
+        history_str = "\n".join(
+            f"{item['role'].capitalize()}: {item['content']}"
+            for item in context[:-1]
+        )
+        if history_str:
+            context_str += f"{history_str}\nUser: {text}\nResponse:"
+        else:
+            context_str += f"User: {text}\nResponse:"
+        return context_str.strip()
+
     async def _publish_direct_response(
         self,
         text: str,
         turn_id: str,
         correlation_id: str | None,
     ) -> None:
+        await self._publish_assistant_lifecycle(
+            Event.create(
+                EventType.ASSISTANT_RESPONSE_STARTED,
+                {"turn_id": turn_id},
+                self.name,
+                correlation_id,
+            )
+        )
         await self.event_bus.publish(Event.create(
             EventType.ASSISTANT_RESPONSE_PARTIAL,
             {"turn_id": turn_id, "text": text},
             self.name,
             correlation_id,
         ))
-        await self.event_bus.publish(Event.create(
-            EventType.ASSISTANT_RESPONSE_COMPLETED,
-            {"turn_id": turn_id, "text": text},
-            self.name,
-            correlation_id,
-        ))
+        await self._publish_assistant_lifecycle(
+            Event.create(
+                EventType.ASSISTANT_RESPONSE_COMPLETED,
+                {"turn_id": turn_id, "text": text},
+                self.name,
+                correlation_id,
+            )
+        )
 
     # Translating LLM Stream Events to Conversation Events
     async def _handle_stream_started(self, event: Event) -> None:
@@ -895,12 +1007,12 @@ class OrchestratorWorker(BaseWorker):
             if turn_id is None:
                 return
             
-        await self.event_bus.publish(
+        await self._publish_assistant_lifecycle(
             Event.create(
                 EventType.ASSISTANT_RESPONSE_STARTED,
                 {"turn_id": turn_id},
                 self.name,
-                event.correlation_id
+                event.correlation_id,
             )
         )
 
@@ -955,12 +1067,12 @@ class OrchestratorWorker(BaseWorker):
                     self._routing_task = None
             self._turn_ids_by_correlation_id.pop(event.correlation_id or "", None)
             
-        await self.event_bus.publish(
+        await self._publish_assistant_lifecycle(
             Event.create(
                 EventType.ASSISTANT_RESPONSE_COMPLETED,
                 {"turn_id": turn_id, "text": full_text},
                 self.name,
-                event.correlation_id
+                event.correlation_id,
             )
         )
 
@@ -972,12 +1084,12 @@ class OrchestratorWorker(BaseWorker):
             if self.active_turn_id == turn_id:
                 self.active_speaker = None
             
-        await self.event_bus.publish(
+        await self._publish_assistant_lifecycle(
             Event.create(
                 EventType.ASSISTANT_RESPONSE_CANCELLED,
                 {"turn_id": turn_id, "reason": event.payload.get("reason", "unknown")},
                 self.name,
-                event.correlation_id
+                event.correlation_id,
             )
         )
 

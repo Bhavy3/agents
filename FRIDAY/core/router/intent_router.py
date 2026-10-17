@@ -7,7 +7,7 @@ from core.events.event_types import EventType
 from core.events.models import Event
 from core.logging.logger import get_logger
 from core.router.llm_fallback import LlmFallbackRouter
-from core.router.rules import Intent, route_by_rules
+from core.router.rules import Intent, fast_chat_intent, route_by_rules
 
 
 class IntentRouter:
@@ -43,4 +43,15 @@ class IntentRouter:
         rule_intent = route_by_rules(text)
         if rule_intent is not None:
             return rule_intent
+        fast_chat = fast_chat_intent(text)
+        if fast_chat is not None:
+            self.logger.info(
+                "fast_chat_route",
+                extra={
+                    "source": fast_chat.source,
+                    "confidence": fast_chat.confidence,
+                    "text_preview": text[:100],
+                },
+            )
+            return fast_chat
         return await self.llm_fallback.route(text, context=context, correlation_id=correlation_id, personality_instructions=personality_instructions, chat_instructions=chat_instructions)

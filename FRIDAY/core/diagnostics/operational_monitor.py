@@ -66,8 +66,11 @@ class OperationalMonitorWorker(BaseWorker):
             try:
                 snapshot_file.parent.mkdir(parents=True, exist_ok=True)
                 snapshot_file.write_text(json.dumps(snapshot.as_dict(), indent=2))
-            except Exception as e:
-                pass
+            except Exception:
+                self.logger.exception(
+                    "runtime_snapshot_persist_failed",
+                    extra={"path": str(snapshot_file)},
+                )
             await asyncio.sleep(self.interval_seconds)
 
     async def capture_snapshot(self) -> RuntimeSnapshot:

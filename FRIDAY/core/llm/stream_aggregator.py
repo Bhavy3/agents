@@ -34,16 +34,32 @@ class ResponseAggregator:
         self.active_streams: dict[str, StreamState] = {}
         self.logger = get_logger("llm.aggregator")
 
-    async def start_stream(self, model: str, correlation_id: str | None = None) -> str:
+    async def start_stream(
+        self,
+        model: str,
+        correlation_id: str | None = None,
+        reason: str | None = None,
+        backend_model: str | None = None,
+    ) -> str:
         stream_id = str(uuid.uuid4())[:8]
         self.active_streams[stream_id] = StreamState(stream_id=stream_id)
         if self.metrics:
             self.metrics.stream_count += 1
         
+        payload = {"stream_id": stream_id, "model": model}
+        if reason is not None:
+            # Keep both names during the compatibility slice: ``reason`` is
+            # the routing API's name, while ``model_reason`` is explicit in
+            # event consumers and logs.
+            payload["reason"] = reason
+            payload["model_reason"] = reason
+        if backend_model is not None:
+            payload["backend_model"] = backend_model
+
         await self.event_bus.publish(
             Event.create(
                 EventType.STREAM_STARTED,
-                {"stream_id": stream_id, "model": model},
+                payload,
                 "aggregator",
                 correlation_id,
             )

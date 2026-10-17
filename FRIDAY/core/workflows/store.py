@@ -8,7 +8,9 @@ class WorkflowStore:
 
     def __init__(self, storage_path: str = "data/workflows/active_workflows.json"):
         self.storage_path = storage_path
-        os.makedirs(os.path.dirname(self.storage_path), exist_ok=True)
+        storage_dir = os.path.dirname(self.storage_path)
+        if storage_dir:
+            os.makedirs(storage_dir, exist_ok=True)
 
     def save_workflows(self, workflows: dict[str, WorkflowGoal]) -> None:
         data = {
@@ -42,9 +44,11 @@ class WorkflowStore:
                     "status": s.status.value,
                     "result": s.result,
                     "error": s.error,
-                    "retry_count": s.retry_count
+                    "retry_count": s.retry_count,
+                    "depends_on": s.depends_on,
                 } for s in goal.steps
-            ]
+            ],
+            "metadata": goal.metadata,
         }
 
     def _dict_to_goal(self, workflow_id: str, data: dict) -> WorkflowGoal:
@@ -56,7 +60,8 @@ class WorkflowStore:
                 status=WorkflowStatus(s["status"]),
                 result=s.get("result"),
                 error=s.get("error"),
-                retry_count=s.get("retry_count", 0)
+                retry_count=s.get("retry_count", 0),
+                depends_on=s.get("depends_on", []),
             ) for s in data["steps"]
         ]
         return WorkflowGoal(
@@ -64,5 +69,6 @@ class WorkflowStore:
             goal=data["goal"],
             steps=steps,
             status=WorkflowStatus(data["status"]),
-            created_at=data["created_at"]
+            created_at=data["created_at"],
+            metadata=data.get("metadata", {}),
         )

@@ -48,6 +48,28 @@ VAD_CONFIG = {
     "confidence_threshold": 0.7,
 }
 
+
+class _AecProcessorAdapter:
+    """Keep the optional native VAD capability safe across binding versions."""
+
+    _FALLBACK_VOICE_RMS = 500
+
+    def __init__(self, native_processor):
+        self._native_processor = native_processor
+        self._fallback_voice = False
+
+    def __getattr__(self, name):
+        return getattr(self._native_processor, name)
+
+    def set_fallback_voice(self, rms: int) -> None:
+        self._fallback_voice = rms >= self._FALLBACK_VOICE_RMS
+
+    def has_voice(self) -> bool:
+        if self._native_processor.vad_enabled():
+            return bool(self._native_processor.has_voice())
+        return self._fallback_voice
+
+
 class AecProcessor(FrameProcessor):
     def __init__(self, worker: 'PipecatAudioWorker', delay_ms: int = 180, enable_ns: bool = False, enable_agc: bool = False, enable_vad: bool = True):
         super().__init__()
@@ -64,7 +86,8 @@ class AecProcessor(FrameProcessor):
         self._aec_lock = asyncio.Lock()
         
         if AudioProcessor is not None:
-            self.aec = AudioProcessor(enable_aec=True, enable_ns=enable_ns, ns_level=2, enable_agc=enable_agc, agc_mode=1, enable_vad=enable_vad)
+            native_aec = AudioProcessor(enable_aec=True, enable_ns=enable_ns, ns_level=2, enable_agc=enable_agc, agc_mode=1, enable_vad=enable_vad)
+            self.aec = _AecProcessorAdapter(native_aec)
             self.aec.set_stream_format(16000, 1)
             self.aec.set_reverse_stream_format(16000, 1)
             self.aec.set_stream_delay(delay_ms)
@@ -170,6 +193,7 @@ class AecProcessor(FrameProcessor):
                     rms = audioop.rms(chunk, 2)
                     self._rms_window.append(rms)
                     self.worker.recent_mic_rms = max(self._rms_window) if self._rms_window else 0
+                    self.aec.set_fallback_voice(self.worker.recent_mic_rms)
                     
                     try:
                         processed_chunk = self.aec.process_stream(chunk)

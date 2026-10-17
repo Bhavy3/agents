@@ -61,6 +61,45 @@ async def test_streaming_worker_lifecycle():
     await bus.drain()
     await bus.stop()
 
+
+@pytest.mark.asyncio
+async def test_streaming_worker_uses_routed_model_and_reason_on_next_stream():
+    """A route selection is visible on the next stream and reaches the fake client."""
+    bus = EventBus()
+    await bus.start()
+    agg = ResponseAggregator(bus)
+    started = []
+    client_models = []
+
+    async def track(event):
+        started.append(event)
+
+    bus.subscribe(EventType.STREAM_STARTED, track)
+
+    class FakeClient:
+        model = "configured-backend"
+
+        def set_model(self, model, reason=""):
+            self.model = model
+            self.reason = reason
+
+        async def stream_generate(self, prompt):
+            client_models.append((self.model, self.reason))
+            yield "routed", True
+
+    client = FakeClient()
+    worker = StreamingLlmWorker(bus, client, agg)
+    worker.set_model("7b", "complex_query_needs_7b")
+
+    assert await worker.stream_reasoning("test prompt") == "routed"
+    await bus.drain()
+
+    assert client_models == [("7b", "complex_query_needs_7b")]
+    assert len(started) == 1
+    assert started[0].payload["model"] == "7b"
+    assert started[0].payload["reason"] == "complex_query_needs_7b"
+    await bus.stop()
+
 @pytest.mark.asyncio
 async def test_streaming_worker_cancellation():
     bus = EventBus()

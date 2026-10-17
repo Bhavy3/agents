@@ -22,6 +22,10 @@ class WorkflowEngine:
         self.event_bus = event_bus
         self.active_workflows: dict[str, WorkflowGoal] = {}
         self.max_steps = 5
+        # A workflow step has one stable correlation id.  Keep the ids that
+        # have already had a request published during this process so a
+        # repeated start/recovery call cannot enqueue the same request twice.
+        self._requested_action_step_ids: set[str] = set()
 
     async def create_workflow(self, goal_text: str, steps: list[dict]) -> str:
         """Initializes a new workflow from a list of step definitions."""
@@ -52,8 +56,55 @@ class WorkflowEngine:
             return
         
         workflow = self.active_workflows[workflow_id]
+        if workflow.status in (
+            WorkflowStatus.COMPLETED,
+            WorkflowStatus.FAILED,
+            WorkflowStatus.CANCELLED,
+            WorkflowStatus.WAITING_CONFIRMATION,
+        ):
+            return
+        if any(s.status == WorkflowStatus.WAITING_CONFIRMATION for s in workflow.steps):
+            workflow.status = WorkflowStatus.WAITING_CONFIRMATION
+            return
         workflow.status = WorkflowStatus.RUNNING
         await self._execute_next_step(workflow)
+
+    async def fail_workflow_for_recovery(
+        self,
+        workflow: WorkflowGoal,
+        reason: str,
+        step: WorkflowStep | None = None,
+    ) -> None:
+        """Fail a workflow when restart recovery cannot safely continue it."""
+        if step is not None:
+            step.status = WorkflowStatus.FAILED
+            step.error = reason
+        workflow.status = WorkflowStatus.FAILED
+        logger.error(
+            "workflow_recovery_failed",
+            extra={
+                "workflow_id": workflow.id,
+                "step_id": step.id if step else None,
+                "reason": reason,
+            },
+        )
+        await self.event_bus.publish(Event.create(
+            EventType.ACTION_GRAPH_FAILED,
+            {
+                "graph_id": workflow.id,
+                "error": reason,
+                "failed_step": step.intent if step else None,
+                "recovery": True,
+            },
+            "workflow_engine",
+            correlation_id=workflow.id,
+        ))
+        await self.event_bus.publish(Event.create(
+            EventType.RESPONSE_READY,
+            {"text": f"Workflow recovery failed: {reason}"},
+            "workflow_engine",
+            correlation_id=workflow.id,
+        ))
 
     async def cancel_workflow(self, workflow_id: str, reason: str = "User interrupted") -> None:
         """Cancels an active workflow at step boundary."""
@@ -131,8 +182,27 @@ class WorkflowEngine:
         return summary_body
 
     async def _execute_next_step(self, workflow: WorkflowGoal) -> None:
-        if workflow.status == WorkflowStatus.CANCELLED:
+        if workflow.status in (
+            WorkflowStatus.CANCELLED,
+            WorkflowStatus.FAILED,
+            WorkflowStatus.WAITING_CONFIRMATION,
+        ):
             logger.info("workflow_step_skipped_cancelled", extra={"workflow_id": workflow.id})
+            return
+
+        # A running or waiting step is still active.  In particular, do not
+        # interpret "no pending step" as completion while an action is in
+        # flight, and do not publish a second request for it.
+        active_step = next(
+            (
+                s for s in workflow.steps
+                if s.status in (WorkflowStatus.RUNNING, WorkflowStatus.WAITING_CONFIRMATION)
+            ),
+            None,
+        )
+        if active_step is not None:
+            if active_step.status == WorkflowStatus.WAITING_CONFIRMATION:
+                workflow.status = WorkflowStatus.WAITING_CONFIRMATION
             return
 
         # Find next pending step
@@ -154,7 +224,11 @@ class WorkflowEngine:
             ))
             return
 
+        if next_step.id in self._requested_action_step_ids:
+            return
+
         next_step.status = WorkflowStatus.RUNNING
+        workflow.status = WorkflowStatus.RUNNING
         step_idx = next(i for i, s in enumerate(workflow.steps) if s.id == next_step.id)
         total_steps = len(workflow.steps)
 
@@ -193,6 +267,7 @@ class WorkflowEngine:
         next_step.parameters = resolved_params
 
         # Publish action request for the step
+        self._requested_action_step_ids.add(next_step.id)
         await self.event_bus.publish(Event.create(
             EventType.ACTION_REQUESTED,
             {
@@ -205,7 +280,7 @@ class WorkflowEngine:
 
     async def handle_action_result(self, step_id: str, success: bool, output: str, error: Optional[str] = None) -> None:
         # Extract workflow_id from step_id
-        workflow_id = step_id.split("_")[0]
+        workflow_id = step_id.rsplit("_", 1)[0]
         if workflow_id not in self.active_workflows:
             return
 
@@ -222,8 +297,15 @@ class WorkflowEngine:
         # Action results can be delivered more than once by a retried or
         # duplicated worker event. Only the currently running step may advance
         # the workflow; completed/failed steps are terminal for this result.
-        if step.status != WorkflowStatus.RUNNING:
+        if step.status not in (WorkflowStatus.RUNNING, WorkflowStatus.WAITING_CONFIRMATION):
             return
+
+        if step.status == WorkflowStatus.WAITING_CONFIRMATION:
+            # The confirmation system may transition directly from waiting to
+            # execution without an ACTION_STARTED event in a test or a
+            # lightweight integration.
+            step.status = WorkflowStatus.RUNNING
+            workflow.status = WorkflowStatus.RUNNING
 
         if success:
             step.status = WorkflowStatus.COMPLETED
@@ -231,6 +313,7 @@ class WorkflowEngine:
             step.result = (output or "")[:MAX_STEP_OUTPUT_CHARS]
             await self._execute_next_step(workflow)
         else:
+            self._requested_action_step_ids.discard(step.id)
             step.status = WorkflowStatus.FAILED
             step.error = error or "Unknown error"
             workflow.status = WorkflowStatus.FAILED

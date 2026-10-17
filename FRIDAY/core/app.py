@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 from collections.abc import Callable
 
 from core.config.settings import Settings, load_settings
@@ -88,7 +89,11 @@ class FridayApp:
             valid_tools=valid_tools,
         )
         self.intent_router = IntentRouter(self.event_bus, llm_fallback=self.llm_fallback)
-        self.memory_worker = MemoryWorker(self.event_bus, metrics=self.metrics)
+        self.memory_worker = MemoryWorker(
+            self.event_bus,
+            metrics=self.metrics,
+            db_path=os.getenv("FRIDAY_MEMORY_DB_PATH", "data/memory/friday_memory.db"),
+        )
         self.screen_capture = ScreenCaptureWorker(self.event_bus, metrics=self.metrics)
         self.ocr_worker = OCRWorker(self.event_bus, metrics=self.metrics)
         self.window_monitor = WindowMonitorWorker(self.event_bus)

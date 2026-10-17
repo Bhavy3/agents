@@ -23,3 +23,10 @@ def test_e_grounded_url():
 
 def test_f_invented_markdown_link_url():
     assert ground_web_answer("See [AccuWeather](https://www.accuweather.com/).", "no links here") == WEB_ANSWER_NOT_FOUND
+
+
+def test_g_stale_year_is_blocked_for_most_recent_query():
+    results = "The 2026 FIFA World Cup was won by Spain. Germany won the 2014 tournament."
+    answer = "Germany won the most recent FIFA World Cup in 2014."
+
+    assert ground_web_answer(answer, results, query="Who won the most recent FIFA World Cup?") == WEB_ANSWER_NOT_FOUND

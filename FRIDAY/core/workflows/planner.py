@@ -112,6 +112,19 @@ class BoundedPlanner:
             params = step.get("parameters", {})
             if not isinstance(params, dict):
                 raise ValueError(f"Step {i} 'parameters' must be a dictionary")
+            params = dict(params)
+            if intent == "search_web" and "query" not in params and isinstance(params.get("input"), str):
+                params["query"] = params.pop("input")
+                logger.warning(
+                    "planner_search_query_alias_normalized",
+                    extra={"step": i, "source_parameter": "input"},
+                )
+            if intent == "remember" and "fact" not in params and isinstance(params.get("input"), str):
+                params["fact"] = params.pop("input")
+                logger.warning(
+                    "planner_remember_fact_alias_normalized",
+                    extra={"step": i, "source_parameter": "input"},
+                )
 
             # Validate parameter substitution restrictions: no {{step_N_result}} in path/command/key/app
             for p_name, p_val in params.items():

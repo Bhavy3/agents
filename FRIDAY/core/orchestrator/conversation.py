@@ -56,6 +56,8 @@ import re as _ground_re
 
 WEB_ANSWER_NOT_FOUND = "I could not find that in the search results."
 _GROUND_NUMBER_RE = _ground_re.compile(r"\d+(?:\.\d+)?")
+_GROUND_YEAR_RE = _ground_re.compile(r"\b(?:19|20)\d{2}\b")
+_TIME_SENSITIVE_QUERY_RE = _ground_re.compile(r"\b(?:latest|most recent|current|right now|today)\b", _ground_re.IGNORECASE)
 _GROUND_URL_RE = _ground_re.compile(r"https?://[^\s)\]>\"']+")
 _GROUND_MARKERS_RE = _ground_re.compile(
     r"<<<BEGIN_UNTRUSTED_WEB_SEARCH_RESULTS>>>|<<<END_UNTRUSTED_WEB_SEARCH_RESULTS>>>"
@@ -64,8 +66,8 @@ _GROUND_MARKERS_RE = _ground_re.compile(
 )
 
 
-def ground_web_answer(answer: str, results: str) -> str:
-    """Return the answer only if every number in it appears in the search results."""
+def ground_web_answer(answer: str, results: str, *, query: str = "") -> str:
+    """Return the answer only when its numbers, URLs, and temporal claims match results."""
     cleaned = " ".join(_GROUND_MARKERS_RE.sub("", answer or "").split())
     if not cleaned:
         return WEB_ANSWER_NOT_FOUND
@@ -73,6 +75,11 @@ def ground_web_answer(answer: str, results: str) -> str:
         if not _ground_re.search(
             rf"(?<![\d.]){_ground_re.escape(number)}(?![\d.])", results or ""
         ):
+            return WEB_ANSWER_NOT_FOUND
+    if _TIME_SENSITIVE_QUERY_RE.search(query):
+        result_years = [int(year) for year in _GROUND_YEAR_RE.findall(results or "")]
+        answer_years = [int(year) for year in _GROUND_YEAR_RE.findall(cleaned)]
+        if result_years and answer_years and max(answer_years) < max(result_years):
             return WEB_ANSWER_NOT_FOUND
     results_lower = (results or "").lower()
     for match in _GROUND_URL_RE.findall(cleaned):
@@ -395,7 +402,7 @@ class OrchestratorWorker(BaseWorker):
                 )
                 return
 
-            grounded = ground_web_answer(answer, results)
+            grounded = ground_web_answer(answer, results, query=pending.query)
             if grounded != answer.strip():
                 self.logger.warning(
                     "web_answer_blocked",

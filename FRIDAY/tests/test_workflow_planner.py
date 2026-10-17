@@ -27,6 +27,27 @@ async def test_planner_valid_json_plan():
     assert plan[1]["intent"] == "write_text_file"
 
 
+def test_search_web_input_alias_normalizes_to_query():
+    """Accept the common planner alias while emitting the tool's required query key."""
+    planner = BoundedPlanner(_make_mock_ollama("[]"))
+    plan = planner.validate_plan(
+        [{"intent": "search_web", "parameters": {"input": "capital of France"}}],
+        original_goal="First search for the capital of France, then remember it.",
+    )
+
+    assert plan == [{"intent": "search_web", "parameters": {"query": "capital of France"}}]
+
+
+def test_remember_input_alias_normalizes_to_fact():
+    planner = BoundedPlanner(_make_mock_ollama("[]"))
+    plan = planner.validate_plan(
+        [{"intent": "remember", "parameters": {"input": "Paris is the capital of France."}}],
+        original_goal="First search for the capital of France, then remember it.",
+    )
+
+    assert plan == [{"intent": "remember", "parameters": {"fact": "Paris is the capital of France."}}]
+
+
 @pytest.mark.asyncio
 async def test_planner_invalid_json_fallback(caplog):
     client = _make_mock_ollama("This is not JSON: {invalid}")

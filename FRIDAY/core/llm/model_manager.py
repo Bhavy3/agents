@@ -59,7 +59,7 @@ class ModelManager:
                 "FRIDAY_LLM_GPU_LAYERS",
                 "FRIDAY_GPU_LAYERS",
             ),
-            default=0,
+            default=33,
             setting="gpu layers",
         )
         self.health_timeout_seconds = self._positive_float(
@@ -170,6 +170,7 @@ class ModelManager:
         health_url = f"http://127.0.0.1:{self.port}/health"
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self.health_timeout_seconds
+        last_error: BaseException | None = None
         while True:
             remaining = deadline - loop.time()
             request_timeout = max(0.01, min(0.5, remaining))
@@ -177,10 +178,15 @@ class ModelManager:
                 with urllib.request.urlopen(health_url, timeout=request_timeout) as response:
                     if response.status == 200:
                         return True
-            except Exception:
-                pass
+            except Exception as exc:
+                last_error = exc
 
             if loop.time() >= deadline:
+                logger.warning(
+                    "model_health_check_timed_out",
+                    exc_info=(type(last_error), last_error, last_error.__traceback__) if last_error else None,
+                    extra={"health_url": health_url},
+                )
                 return False
             await asyncio.sleep(min(self.health_poll_interval_seconds, deadline - loop.time()))
 
@@ -310,6 +316,16 @@ class ModelManager:
                 await self.event_bus.publish(Event.create(
                     EventType.RESPONSE_READY,
                     {"text": "Going into degraded mode, full power..."},
+                    "model_manager",
+                ))
+            elif not loaded and self.event_bus:
+                if self.process is not None and self.current_model == "3b":
+                    message = "The 7B model could not start, so I restored the 3B model and will continue with it."
+                else:
+                    message = "The 7B model could not start, and the 3B model did not recover. Please restart the local model server."
+                await self.event_bus.publish(Event.create(
+                    EventType.RESPONSE_READY,
+                    {"text": message},
                     "model_manager",
                 ))
             return loaded

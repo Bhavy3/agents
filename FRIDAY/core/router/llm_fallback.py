@@ -82,7 +82,7 @@ def _extract_parameters(raw_response: str) -> dict:
                 params = result.get("parameters")
                 return params if isinstance(params, dict) else {}
         except (json.JSONDecodeError, ValueError):
-            pass
+            logger.warning("llm_parameter_repair_parse_failed", exc_info=True)
 
     # 3. Regex: r'"parameters"\s*:\s*(\{(?:[^{}"]|"(?:\\.|[^"\\])*")*\})'
     match = re.search(r'"parameters"\s*:\s*(\{(?:[^{}"]|"(?:\\.|[^"\\])*")*\})', text)
@@ -92,7 +92,7 @@ def _extract_parameters(raw_response: str) -> dict:
             if isinstance(params, dict):
                 return params
         except (json.JSONDecodeError, ValueError):
-            pass
+            logger.warning("llm_parameter_regex_parse_failed", exc_info=True)
 
     # 4. Otherwise: logger.error("llm_parameters_unrecoverable", extra={"raw_response": raw}, exc_info=initial_error) and return {}.
     if initial_error is None:
@@ -122,20 +122,18 @@ class LlmFallbackRouter:
         try:
             raw_response, metrics = await self.ollama.generate(self._build_prompt(text, personality_instructions), max_tokens=80)
         except Exception as e:
-            import traceback
-            print(f"\n\n[DIAGNOSTIC] ollama.generate THREW EXCEPTION: {repr(e)}")
-            traceback.print_exc()
+            logger.exception("router_llm_generate_failed", extra={"model": self.ollama.model})
             await self._emit(EventType.LLM_FAILURE, {"error": str(e), "model": self.ollama.model}, correlation_id)
             return self._fallback(text)
 
         if not metrics.success:
-            print(f"\n\n[DIAGNOSTIC] ollama.generate FAILED METRICS: {metrics.error}")
+            logger.error("router_llm_generation_unsuccessful", extra={"error": metrics.error, "model": metrics.model})
             await self._emit(EventType.LLM_FAILURE, {"error": metrics.error or "unknown", "model": metrics.model}, correlation_id)
             return self._fallback(text)
 
         parsed = parse_llm_response(raw_response or "")
         if not parsed:
-            print(f"\n\n[DIAGNOSTIC] PARSE FAILED. RAW RESPONSE: {repr(raw_response)}")
+            logger.warning("router_llm_response_parse_failed", extra={"raw_response": raw_response})
             await self._emit(EventType.LLM_FAILURE, {"error": "malformed_response", "model": self.ollama.model}, correlation_id)
             return self._fallback(text)
 
@@ -159,7 +157,7 @@ class LlmFallbackRouter:
             intent_str = "chat"
 
         if intent_str != "chat" and intent_str not in self.valid_tools:
-            print(f"[DIAGNOSTIC] Tool '{intent_str}' not found in valid_tools. Falling back to chat.")
+            logger.warning("router_tool_unavailable_falling_back_to_chat", extra={"intent": intent_str})
             intent_str = "chat"
             intent_name = IntentName.CHAT
 

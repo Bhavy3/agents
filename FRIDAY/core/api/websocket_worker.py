@@ -102,7 +102,7 @@ class WebsocketServerWorker(BaseWorker):
                 except json.JSONDecodeError:
                     self.logger.warning("invalid_json_received")
         except websockets.exceptions.ConnectionClosed:
-            pass
+            self.logger.warning("websocket_client_connection_closed", exc_info=True)
         finally:
             self.clients.remove(websocket)
             self.logger.info("websocket_client_disconnected", extra={"client": str(websocket.remote_address)})

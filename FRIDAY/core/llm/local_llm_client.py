@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from dataclasses import dataclass
 from enum import StrEnum
@@ -10,6 +11,8 @@ from urllib.parse import urlparse
 
 import httpx
 from core.logging.logger import get_logger
+
+logger = logging.getLogger(__name__)
 
 
 class LlmProvider(StrEnum):
@@ -61,7 +64,7 @@ def parse_llm_response(raw_text: str) -> LlmResponse | None:
                     reasoning_summary="[Truncated]"
                 )
             except ValueError:
-                pass
+                logger.warning("llm_response_confidence_invalid", exc_info=True)
         return None
 
     if not isinstance(data, dict):

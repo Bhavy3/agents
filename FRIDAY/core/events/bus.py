@@ -57,7 +57,7 @@ class EventBus:
             try:
                 await self._dispatcher_task
             except asyncio.CancelledError:
-                pass
+                self._logger.warning("event_bus_dispatch_cancelled", exc_info=True)
         self._logger.info("event_bus_stopped")
 
     def subscribe(self, event_type: EventType, handler: EventHandler) -> None:
@@ -71,13 +71,17 @@ class EventBus:
             try:
                 self._subscribers[event_type].remove(handler)
             except ValueError:
-                pass
+                self._logger.warning(
+                    "event_handler_unsubscribe_missing",
+                    exc_info=True,
+                    extra={"event_type": event_type.value},
+                )
 
     def unsubscribe_all(self, handler: EventHandler) -> None:
         try:
             self._wildcard_subscribers.remove(handler)
         except ValueError:
-            pass
+            self._logger.warning("wildcard_event_handler_unsubscribe_missing", exc_info=True)
 
     async def publish(self, event: object) -> None:
         if not self._running:

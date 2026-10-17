@@ -52,6 +52,12 @@ pytest
 
 ## Runtime Validation
 
+The local llama.cpp launcher and `ModelManager` use `FRIDAY_LLAMA_NGL` as the
+canonical GPU-layer setting. It defaults to `33` in both paths. Set it before
+starting FRIDAY when the local GPU needs a different offload count, for example
+`$env:FRIDAY_LLAMA_NGL = '12'`. The older `FRIDAY_LLAMA_GPU_LAYERS` and
+`FRIDAY_LLM_GPU_LAYERS` names remain accepted as fallbacks.
+
 ```powershell
 python main.py --burn-in --duration-seconds 28800
 ```

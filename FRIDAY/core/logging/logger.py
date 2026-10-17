@@ -24,7 +24,7 @@ class SafeRotatingFileHandler(RotatingFileHandler):
         try:
             super().doRollover()
         except PermissionError:
-            pass
+            logging.getLogger(__name__).warning("log_rotation_blocked_by_file_lock", exc_info=True)
 
     def handleError(self, record: logging.LogRecord) -> None:
         """Suppress PermissionError stderr noise from log rotation."""

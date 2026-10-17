@@ -37,8 +37,7 @@ class WindowMonitorWorker(BaseWorker):
                         self.name
                     ))
             except Exception:
-                # Window enumeration can be flaky on some systems, suppress noise
-                pass
+                self.logger.warning("active_window_context_poll_failed", exc_info=True)
                 
             self.heartbeat(f"monitoring [active={self._last_active_window}]")
             await asyncio.sleep(2.0)
@@ -48,4 +47,5 @@ class WindowMonitorWorker(BaseWorker):
             window = gw.getActiveWindow()
             return window.title if window else None
         except Exception:
+            self.logger.warning("active_window_query_failed", exc_info=True)
             return None

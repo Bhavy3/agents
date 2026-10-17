@@ -936,11 +936,8 @@ class OrchestratorWorker(BaseWorker):
         except asyncio.CancelledError:
             self.logger.info("routing_cancelled", extra={"turn_id": turn_id})
             # Cancellation is handled in _handle_speech_started
-        except Exception as e:
-            import traceback
-            print(f"\n\n[DIAGNOSTIC] _route_and_execute THREW EXCEPTION: {repr(e)}")
-            traceback.print_exc()
-            self.logger.error("routing_failed", extra={"error": str(e), "turn_id": turn_id})
+        except Exception:
+            self.logger.exception("routing_failed", extra={"turn_id": turn_id})
             if deferred_web_search is not None:
                 self._pending_web_searches.pop(deferred_web_search, None)
                 await self._cancel_web_search_ack(deferred_web_search)
@@ -1172,4 +1169,4 @@ class OrchestratorWorker(BaseWorker):
                         )
                         
         except asyncio.CancelledError:
-            pass
+            self.logger.warning("workflow_timeout_monitor_cancelled", exc_info=True)

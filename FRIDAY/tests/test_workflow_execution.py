@@ -88,14 +88,65 @@ async def test_tool_chaining_cumulative_step_budget_across_multiple_references()
     await engine.handle_action_result(action_requests[1].correlation_id, success=True, output="Y" * 1000)
     await bus.drain()
 
-    # Step 2: Cumulative total of param_a and param_b must not exceed MAX_STEP_OUTPUT_CHARS (1500)
+    # Step 2: Cumulative total of param_a and param_b must not exceed MAX_STEP_OUTPUT_CHARS (1400)
     assert len(action_requests) == 3
     step_2_req = action_requests[2]
     param_a = step_2_req.payload["parameters"]["param_a"]
     param_b = step_2_req.payload["parameters"]["param_b"]
     assert len(param_a) == 1000
-    assert len(param_b) == 500  # Only 500 characters remaining in cumulative budget
+    assert len(param_b) == 400  # Only 400 characters remaining in cumulative budget
     assert len(param_a) + len(param_b) == MAX_STEP_OUTPUT_CHARS
+
+    await bus.stop()
+
+
+@pytest.mark.asyncio
+async def test_tool_chaining_url_and_json_outputs_share_reduced_budget():
+    """URL/JSON-heavy chained results stay within the measured Qwen-safe cap."""
+    bus = EventBus()
+    await bus.start()
+    engine = WorkflowEngine(bus)
+    requests = []
+
+    async def on_action_req(event):
+        requests.append(event)
+
+    bus.subscribe(EventType.ACTION_REQUESTED, on_action_req)
+    workflow_id = await engine.create_workflow("Bound URL and JSON chaining", [
+        {"intent": "search_web", "parameters": {"query": "example"}},
+        {"intent": "search_web", "parameters": {"query": "second"}},
+        {
+            "intent": "search_web",
+            "parameters": {
+                "query": "https://example.com/?first={{step_0_result}}&second={{step_1_result}}",
+                "prompt": '{"result":"{{step_0_result}}","source":"{{step_1_result}}"}',
+            },
+        },
+    ])
+
+    await engine.start_workflow(workflow_id)
+    await bus.drain()
+    await engine.handle_action_result(
+        requests[0].correlation_id,
+        success=True,
+        output='{"url":"https://example.com/one?x=123","answer":"A"}' * 30,
+    )
+    await bus.drain()
+    await engine.handle_action_result(
+        requests[1].correlation_id,
+        success=True,
+        output='https://example.org/two?value=long-value&n=456 ' * 30,
+    )
+    await bus.drain()
+
+    chained = requests[2].payload["parameters"]
+    injected = (
+        len(chained["query"].split("first=", 1)[1].split("&second=", 1)[0])
+        + len(chained["query"].split("&second=", 1)[1])
+        + len(chained["prompt"].split('"result":"', 1)[1].split('","source"', 1)[0])
+        + len(chained["prompt"].split('"source":"', 1)[1].split('"}', 1)[0])
+    )
+    assert injected <= 1400
 
     await bus.stop()
 

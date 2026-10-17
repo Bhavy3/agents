@@ -10,9 +10,10 @@ from ..events.models import Event
 
 logger = logging.getLogger(__name__)
 
-# Maximum character boundary for step output to ensure chained inputs fit in LLM 4096-token budget.
-# Measured with Qwen tokenizer: ~3.2 chars/token -> 1500 chars ~ 470 tokens.
-MAX_STEP_OUTPUT_CHARS = 1500
+# Cumulative character boundary for all chained output inserted into one step.
+# Qwen2.5-3B tokenizer measurements: 1400 chars encoded to 401 URL-heavy,
+# 373 JSON-heavy, and 496 mixed URL/JSON tokens. Keep the margin below 500.
+MAX_STEP_OUTPUT_CHARS = 1400
 
 
 class WorkflowEngine:

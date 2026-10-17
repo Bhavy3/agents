@@ -6,7 +6,9 @@ set "LLAMA_SERVER=%FRIDAY_LLAMA_SERVER%"
 if not defined LLAMA_SERVER set "LLAMA_SERVER=C:\AI\llama.cpp\llama-server.exe"
 set "LLAMA_MODEL=%FRIDAY_LLM_MODEL_PATH%"
 if not defined LLAMA_MODEL set "LLAMA_MODEL=C:\AI\models\qwen2.5-3b-instruct-q5_k_m.gguf"
-set "LLAMA_GPU_LAYERS=%FRIDAY_LLM_GPU_LAYERS%"
+set "LLAMA_GPU_LAYERS=%FRIDAY_LLAMA_NGL%"
+if not defined LLAMA_GPU_LAYERS set "LLAMA_GPU_LAYERS=%FRIDAY_LLAMA_GPU_LAYERS%"
+if not defined LLAMA_GPU_LAYERS set "LLAMA_GPU_LAYERS=%FRIDAY_LLM_GPU_LAYERS%"
 if not defined LLAMA_GPU_LAYERS set "LLAMA_GPU_LAYERS=33"
 
 if not exist ".venv\Scripts\python.exe" (

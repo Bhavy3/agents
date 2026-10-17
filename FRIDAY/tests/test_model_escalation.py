@@ -218,6 +218,19 @@ async def test_command_uses_configured_gpu_layers(tmp_path, monkeypatch):
     assert mm.current_model == "7b"
 
 
+def test_gpu_layer_default_matches_local_launcher(monkeypatch):
+    """The app and local launcher use the same documented offload default."""
+    for name in (
+        "FRIDAY_LLAMA_NGL",
+        "FRIDAY_LLAMA_GPU_LAYERS",
+        "FRIDAY_LLM_GPU_LAYERS",
+        "FRIDAY_GPU_LAYERS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    assert ModelManager().gpu_layers == 33
+
+
 @pytest.mark.asyncio
 async def test_failed_target_rolls_back_and_emits_failure(tmp_path):
     """A target returning non-200 is killed and the prior model is restored."""
@@ -228,7 +241,16 @@ async def test_failed_target_rolls_back_and_emits_failure(tmp_path):
     bus = EventBus()
     await bus.start()
     failures = []
-    bus.subscribe(EventType.LLM_FAILURE, lambda event: failures.append(event))
+    responses = []
+
+    async def on_failure(event):
+        failures.append(event)
+
+    async def on_response(event):
+        responses.append(event)
+
+    bus.subscribe(EventType.LLM_FAILURE, on_failure)
+    bus.subscribe(EventType.RESPONSE_READY, on_response)
 
     mm = ModelManager(
         event_bus=bus,
@@ -257,6 +279,11 @@ async def test_failed_target_rolls_back_and_emits_failure(tmp_path):
         assert len(failures) == 1
         assert failures[0].payload["model"] == "7b"
         assert failures[0].payload["rolled_back"] is True
+        assert any(
+            "7b" in event.payload.get("text", "").casefold()
+            and "3b" in event.payload.get("text", "").casefold()
+            for event in responses
+        ), [event.payload for event in responses]
     finally:
         await bus.stop()
 

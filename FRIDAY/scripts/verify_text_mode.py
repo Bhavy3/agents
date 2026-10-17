@@ -576,43 +576,71 @@ async def run_idle_probe(audit_dir: Path, ledger: EvidenceLedger, *, idle_second
 
     from core.app import FridayApp
 
+    log_path = audit_dir / "data" / "logs" / "friday.log"
     app = FridayApp(settings=settings)
+    initial_log_size = log_path.stat().st_size if log_path.is_file() else 0
     await app.start()
+    await asyncio.sleep(0.1)  # Let supervised worker tasks enter their running state.
     start = time.monotonic()
+    active_log_bytes = b""
+    worker_states: list[dict[str, Any]] = []
     try:
         await asyncio.sleep(max(0, idle_seconds))
-        log_path = audit_dir / "data" / "logs" / "friday.log"
-        counts: dict[str, int] = defaultdict(int)
-        log_errors: list[str] = []
         if log_path.is_file():
-            for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
-                try:
-                    item = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                level = item.get("level", "")
-                if level in {"ERROR", "WARNING", "WARN"}:
-                    event_name = str(item.get("message") or item.get("logger") or "unknown")
-                    counts[f"{level}:{event_name}"] += 1
-                    if level == "ERROR":
-                        log_errors.append(line)
+            active_log_bytes = log_path.read_bytes()[initial_log_size:]
         worker_states = [
             {
                 "name": worker.name,
-                "state": str(getattr(worker, "state", None)),
-                "task_done": worker.task.done() if getattr(worker, "task", None) else None,
+                "state": worker.health.state.value,
+                "alive": worker.health.alive,
+                "current_task": worker.health.current_task,
+                "restart_count": worker.health.restart_count,
             }
             for worker in app.supervisor.workers
         ]
+    finally:
+        await app.stop()
+
+    try:
+        all_log_bytes = log_path.read_bytes() if log_path.is_file() else b""
+        run_log_bytes = all_log_bytes[initial_log_size:]
+        all_log_lines = run_log_bytes.decode("utf-8", errors="replace").splitlines()
+        shutdown_log_lines = all_log_bytes[initial_log_size + len(active_log_bytes):].decode(
+            "utf-8", errors="replace"
+        ).splitlines()
+        counts: dict[str, int] = defaultdict(int)
+        log_errors: list[str] = []
+        shutdown_warnings: list[str] = []
+        for line in all_log_lines:
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            level = item.get("level", "")
+            if level in {"ERROR", "WARNING", "WARN"}:
+                event_name = str(item.get("message") or item.get("logger") or "unknown")
+                counts[f"{level}:{event_name}"] += 1
+                if level == "ERROR":
+                    log_errors.append(line)
+        for line in shutdown_log_lines:
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if item.get("level") in {"WARNING", "WARN"}:
+                shutdown_warnings.append(line)
         ledger.record("idle_soak", "live-real-app", {
             "elapsed_seconds": round(time.monotonic() - start, 2),
             "worker_states": worker_states,
+            "worker_count": len(worker_states),
             "error_count": len(log_errors),
             "top_error_warning_events": sorted(counts.items(), key=lambda pair: pair[1], reverse=True)[:10],
             "error_lines": log_errors,
+            "shutdown_warning_lines": shutdown_warnings,
         })
-    finally:
-        await app.stop()
+    except Exception as exc:
+        ledger.record("idle_soak_summary_failed", "failed", {"exception": repr(exc)}, 1)
+        raise
 
 
 def main() -> int:

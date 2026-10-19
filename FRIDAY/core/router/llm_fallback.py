@@ -13,6 +13,10 @@ from core.events.models import Event
 from core.llm.ollama_client import OllamaClient, LlmResponse, parse_llm_response
 from core.llm.streaming_worker import StreamingLlmWorker
 from core.memory.command_history import CommandHistory
+from core.memory.explicit_requests import (
+    EXPLICIT_MEMORY_REQUEST as _EXPLICIT_MEMORY_REQUEST,
+    extract_explicit_memory_content,
+)
 from core.router.rules import Intent, IntentName
 
 
@@ -33,12 +37,6 @@ User Input: give in depth knowledge about the jarvis
 User Input: search google for latest news
 {"intent": "search_web", "confidence": 0.9, "suggested_action": "", "reasoning_summary": "Web search request.", "parameters": {"query": "latest news"}}
 """
-
-
-_EXPLICIT_MEMORY_REQUEST = re.compile(
-    r"^\s*(?:remember\s+(?:that|this|my|our)\s+|remember\s*:\s*|don't\s+forget\s+(?:that\s+)?|do\s+not\s+forget\s+(?:that\s+)?|save\s+this\s*:\s*)(.+?)\s*$",
-    re.IGNORECASE,
-)
 
 
 def _extract_parameters(raw_response: str) -> dict:
@@ -140,7 +138,7 @@ class LlmFallbackRouter:
         await self._emit(EventType.LLM_RESPONSE_RECEIVED, {"intent": parsed.intent, "confidence": parsed.confidence, "latency": metrics.latency_seconds}, correlation_id)
 
         intent_str = parsed.intent.strip().lower()
-        if intent_str == "remember" and not _EXPLICIT_MEMORY_REQUEST.match(text):
+        if intent_str == "remember" and extract_explicit_memory_content(text) is None:
             logger.warning("remember_intent_rejected", extra={"raw_value": parsed.intent})
             intent_str = "chat"
 

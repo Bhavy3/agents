@@ -1,6 +1,5 @@
 import asyncio
 import inspect
-import re
 import time
 import uuid
 from collections import deque
@@ -26,6 +25,12 @@ from core.orchestrator.memory_context import (
     MEMORY_QUERY_TIMEOUT_SECONDS,
     MemoryContextMixin,
 )
+from core.memory.explicit_requests import (
+    EXPLICIT_MEMORY_REQUEST as _EXPLICIT_MEMORY_REQUEST,
+    PERSONAL_MEMORY_QUERY as _PERSONAL_MEMORY_QUERY,
+    extract_explicit_memory_content,
+    is_personal_memory_query,
+)
 from core.orchestrator.workflow_trigger import WorkflowTriggerMixin, _WORKFLOW_REQUEST
 from core.orchestrator.web_search import (
     PendingWebSearch,
@@ -40,18 +45,6 @@ from core.orchestrator.web_search import (
 )
 
 DEGRADED_ROUTER_MESSAGE = "I'm unable to reach the conversation router right now. Please try again."
-_EXPLICIT_MEMORY_REQUEST = re.compile(
-    r"^\s*(?:remember\s+(?:that|this|my|our)\s+|remember\s*:\s*|don't\s+forget\s+(?:that\s+)?|do\s+not\s+forget\s+(?:that\s+)?|save\s+this\s*:\s*)(.+?)\s*$",
-    re.IGNORECASE,
-)
-_PERSONAL_MEMORY_QUERY = re.compile(
-    r"\b(?:my|mine|do you remember|what do you remember|"
-    r"what (?:did|have) i (?:tell|told|say|said) you|"
-    r"remember what i (?:told|said)|"
-    r"what (?:was|is) (?:the )?(?:[\w'-]+\s+){0,4}"
-    r"(?:code|color|name|date|number|address|favorite|preference|detail|fact|answer|password))\b",
-    re.IGNORECASE,
-)
 class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, WorkflowTriggerMixin):
     """Coordinates conversation turns, routing, and interruptions."""
 
@@ -318,7 +311,7 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
     async def _initiate_turn(self, text: str, correlation_id: str | None) -> None:
         correlation_id = correlation_id or str(uuid.uuid4())
         self._last_activity_time = time.perf_counter()
-        memory_match = _EXPLICIT_MEMORY_REQUEST.match(text)
+        memory_content = extract_explicit_memory_content(text)
         
         async with self._state_lock:
             turn_id = str(uuid.uuid4())[:8]
@@ -351,20 +344,18 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
             )
         )
 
-        if memory_match:
-            memory_content = memory_match.group(1).strip()
-            if memory_content:
-                await self.event_bus.publish(Event.create(
-                    EventType.MEMORY_WRITE_REQUEST,
-                    {
-                        "type": "approved_fact",
-                        "content": memory_content,
-                        "source": "explicit_user_request",
-                        "explicit_user_approved": True,
-                    },
-                    self.name,
-                    correlation_id,
-                ))
+        if memory_content:
+            await self.event_bus.publish(Event.create(
+                EventType.MEMORY_WRITE_REQUEST,
+                {
+                    "type": "approved_fact",
+                    "content": memory_content,
+                    "source": "explicit_user_request",
+                    "explicit_user_approved": True,
+                },
+                self.name,
+                correlation_id,
+            ))
         
         # Human presence: Acknowledgment
         ack = self.presence.get_acknowledgment(self.current_style, self.enable_presence_ack)
@@ -436,7 +427,7 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
             if not ready:
                 return
 
-            if _EXPLICIT_MEMORY_REQUEST.match(text):
+            if extract_explicit_memory_content(text) is not None:
                 response_text = "I'll remember that."
                 async with self._state_lock:
                     if self.active_turn_id == turn_id:
@@ -476,7 +467,7 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
                 (line.removeprefix("- ").strip() for line in mem_ctx.splitlines() if line.strip()),
                 "",
             )
-            if _PERSONAL_MEMORY_QUERY.search(text) and personal_memory:
+            if is_personal_memory_query(text) and personal_memory:
                 intent = Intent(
                     IntentName.CHAT,
                     1.0,

@@ -125,12 +125,20 @@ class BoundedPlanner:
                     "planner_remember_fact_alias_normalized",
                     extra={"step": i, "source_parameter": "input"},
                 )
+            remember_value = params.get("fact")
+            remember_reference = (
+                re.fullmatch(r"\{\{step_(\d+)_(?:result|output)\}\}", remember_value.strip())
+                if isinstance(remember_value, str)
+                else None
+            )
+            invalid_forward_reference = bool(remember_reference and int(remember_reference.group(1)) >= i)
             if (
                 intent == "remember"
                 and (
                     "fact" not in params
                     or params.get("fact") is None
                     or isinstance(params.get("fact"), str) and not params["fact"].strip()
+                    or invalid_forward_reference
                 )
                 and i > 0
                 and validated[i - 1]["intent"] == "search_web"

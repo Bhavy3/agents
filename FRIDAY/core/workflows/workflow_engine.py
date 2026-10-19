@@ -2,6 +2,7 @@ import asyncio
 import time
 import uuid
 import logging
+import re
 from typing import Optional
 from .state import WorkflowGoal, WorkflowStep, WorkflowStatus
 from ..events.bus import EventBus
@@ -135,6 +136,29 @@ class WorkflowEngine:
             correlation_id=workflow.correlation_id or workflow.id,
         ))
 
+    @staticmethod
+    def _grounded_search_fact(step: WorkflowStep) -> str:
+        raw_result = (step.result or "").strip()
+        if step.intent != "search_web" or not raw_result:
+            return raw_result
+
+        query_words = set(re.findall(r"[a-z0-9]+", str(step.parameters.get("query", "")).lower()))
+        query_words -= {"a", "an", "and", "for", "from", "in", "of", "on", "the", "to"}
+        candidates: list[str] = []
+        for fragment in re.split(r"\n+|(?<=[.!?])\s+", raw_result):
+            sentence = re.sub(r"^\s*\d+[.)]\s*", "", fragment).strip()
+            if not sentence:
+                continue
+            sentence_words = set(re.findall(r"[a-z0-9]+", sentence.lower()))
+            if query_words and not query_words.issubset(sentence_words):
+                continue
+            if re.search(r"\b(?:is|are|was|were|has been|have been)\b", sentence, re.IGNORECASE):
+                candidates.append(sentence)
+
+        if candidates:
+            return min(candidates, key=len)
+        return raw_result
+
     def _format_grounded_summary(self, workflow: WorkflowGoal) -> str:
         """Extracts the grounded answer from workflow step results.
         Result comes from the last NON-remember step's output.
@@ -159,7 +183,7 @@ class WorkflowEngine:
             if last_non_remember.intent == "read_text_file":
                 summary_body = "I've read the requested file."
             else:
-                raw_out = (last_non_remember.result or "").strip()
+                raw_out = self._grounded_search_fact(last_non_remember)
                 if raw_out and raw_out not in ("Saved", "No matches found"):
                     # Bound to 300 chars on sentence or word boundary
                     if len(raw_out) > 300:
@@ -254,6 +278,20 @@ class WorkflowEngine:
             correlation_id=next_step.id,
         ))
 
+        # Repair a planner-produced blank remember value at execution time. The
+        # preceding search result is the only safe source for this explicit chain.
+        if next_step.intent == "remember":
+            previous_search = next(
+                (step for step in reversed(workflow.steps[:step_idx]) if step.intent == "search_web"),
+                None,
+            )
+            if previous_search is not None:
+                for parameter_name in ("fact", "content", "text", "input"):
+                    parameter_value = next_step.parameters.get(parameter_name)
+                    if parameter_name in next_step.parameters and not str(parameter_value or "").strip():
+                        next_step.parameters[parameter_name] = self._grounded_search_fact(previous_search)
+                        break
+
         # Resolve variables with a strict CUMULATIVE prompt budget across ALL references in the step
         resolved_params = next_step.parameters.copy()
         remaining_budget = MAX_STEP_OUTPUT_CHARS
@@ -264,7 +302,7 @@ class WorkflowEngine:
                     placeholder_result = f"{{{{step_{i}_result}}}}"
                     placeholder_output = f"{{{{step_{i}_output}}}}"
                     if placeholder_result in value or placeholder_output in value:
-                        raw_result = str(s.result or "")
+                        raw_result = self._grounded_search_fact(s)
                         # Allocate from the shared cumulative budget
                         inject_text = raw_result[:max(0, remaining_budget)]
                         remaining_budget = max(0, remaining_budget - len(inject_text))

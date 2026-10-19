@@ -107,3 +107,49 @@ async def test_duplicate_action_result_does_not_advance_workflow_twice():
     assert workflow.status == WorkflowStatus.RUNNING
 
     await bus.stop()
+
+
+@pytest.mark.asyncio
+async def test_search_then_remember_keeps_a_concise_grounded_fact():
+    bus = EventBus()
+    engine = WorkflowEngine(bus)
+    action_requests = []
+    responses = []
+
+    async def capture_action(event):
+        action_requests.append(event)
+
+    async def capture_response(event):
+        responses.append(event)
+
+    bus.subscribe(EventType.ACTION_REQUESTED, capture_action)
+    bus.subscribe(EventType.RESPONSE_READY, capture_response)
+    await bus.start()
+
+    workflow_id = await engine.create_workflow(
+        "First search for the capital of France, then remember it.",
+        [
+            {"intent": "search_web", "parameters": {"query": "capital of France"}},
+            {"intent": "remember", "parameters": {"fact": ""}},
+        ],
+    )
+    await engine.start_workflow(workflow_id)
+    workflow = engine.active_workflows[workflow_id]
+    raw_search_result = (
+        "1. Capital of France\n"
+        "This is a chronological list of capitals of France. "
+        "The capital of France has been Paris since its liberation in 1944.\n"
+        "4. Capital of France - Simple English Wikipedia\n"
+        "The capital of France is Paris."
+    )
+
+    await engine.handle_action_result(workflow.steps[0].id, True, raw_search_result)
+    await bus.drain()
+
+    assert action_requests[1].payload["parameters"]["fact"] == "The capital of France is Paris."
+
+    await engine.handle_action_result(workflow.steps[1].id, True, "Remembered: The capital of France is Paris.")
+    await bus.drain()
+
+    assert responses[-1].payload["text"] == "The capital of France is Paris. Saved to memory."
+    await bus.stop()

@@ -23,3 +23,17 @@ async def test_dropped_invalid_event_logged_at_warning(caplog):
         assert any(r.levelname == "WARNING" for r in records)
     finally:
         await bus.stop()
+
+
+@pytest.mark.asyncio
+async def test_normal_event_bus_shutdown_does_not_log_cancellation_as_warning(caplog):
+    bus = EventBus()
+    await bus.start()
+    with caplog.at_level(logging.WARNING, logger="events.bus"):
+        await bus.stop()
+
+    cancellation_records = [
+        record for record in caplog.records
+        if record.getMessage() == "event_bus_dispatch_cancelled"
+    ]
+    assert cancellation_records == []

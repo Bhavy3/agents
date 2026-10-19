@@ -33,3 +33,4 @@ class WorkflowGoal:
     status: WorkflowStatus = WorkflowStatus.PENDING
     created_at: float = field(default_factory=lambda: 0.0) # Will be set by engine
     metadata: dict[str, Any] = field(default_factory=dict)
+    correlation_id: Optional[str] = None

@@ -28,7 +28,12 @@ class WorkflowEngine:
         # repeated start/recovery call cannot enqueue the same request twice.
         self._requested_action_step_ids: set[str] = set()
 
-    async def create_workflow(self, goal_text: str, steps: list[dict]) -> str:
+    async def create_workflow(
+        self,
+        goal_text: str,
+        steps: list[dict],
+        correlation_id: str | None = None,
+    ) -> str:
         """Initializes a new workflow from a list of step definitions."""
         if len(steps) > self.max_steps:
             raise ValueError(f"Workflow exceeds max steps limit ({self.max_steps})")
@@ -46,7 +51,8 @@ class WorkflowEngine:
             id=workflow_id,
             goal=goal_text,
             steps=workflow_steps,
-            created_at=time.time()
+            created_at=time.time(),
+            correlation_id=correlation_id,
         )
         
         self.active_workflows[workflow_id] = workflow
@@ -98,13 +104,13 @@ class WorkflowEngine:
                 "recovery": True,
             },
             "workflow_engine",
-            correlation_id=workflow.id,
+            correlation_id=workflow.correlation_id or workflow.id,
         ))
         await self.event_bus.publish(Event.create(
             EventType.RESPONSE_READY,
             {"text": f"Workflow recovery failed: {reason}"},
             "workflow_engine",
-            correlation_id=workflow.id,
+            correlation_id=workflow.correlation_id or workflow.id,
         ))
 
     async def cancel_workflow(self, workflow_id: str, reason: str = "User interrupted") -> None:
@@ -126,7 +132,7 @@ class WorkflowEngine:
             EventType.ACTION_GRAPH_FAILED,
             {"graph_id": workflow.id, "error": reason, "cancelled": True},
             "workflow_engine",
-            correlation_id=workflow.id,
+            correlation_id=workflow.correlation_id or workflow.id,
         ))
 
     def _format_grounded_summary(self, workflow: WorkflowGoal) -> str:
@@ -215,13 +221,14 @@ class WorkflowEngine:
             await self.event_bus.publish(Event.create(
                 EventType.ACTION_GRAPH_COMPLETED,
                 {"graph_id": workflow.id, "success": True},
-                "workflow_engine"
+                "workflow_engine",
+                correlation_id=workflow.correlation_id or workflow.id,
             ))
             await self.event_bus.publish(Event.create(
                 EventType.RESPONSE_READY,
                 {"text": summary_text},
                 "workflow_engine",
-                correlation_id=workflow.id,
+                correlation_id=workflow.correlation_id or workflow.id,
             ))
             return
 
@@ -322,11 +329,12 @@ class WorkflowEngine:
             await self.event_bus.publish(Event.create(
                 EventType.ACTION_GRAPH_FAILED,
                 {"graph_id": workflow.id, "error": step.error, "failed_step": step.intent},
-                "workflow_engine"
+                "workflow_engine",
+                correlation_id=workflow.correlation_id or workflow.id,
             ))
             await self.event_bus.publish(Event.create(
                 EventType.RESPONSE_READY,
                 {"text": fail_msg},
                 "workflow_engine",
-                correlation_id=workflow.id,
+                correlation_id=workflow.correlation_id or workflow.id,
             ))

@@ -49,6 +49,7 @@ class WorkflowStore:
                 } for s in goal.steps
             ],
             "metadata": goal.metadata,
+            "correlation_id": goal.correlation_id,
         }
 
     def _dict_to_goal(self, workflow_id: str, data: dict) -> WorkflowGoal:
@@ -71,4 +72,5 @@ class WorkflowStore:
             status=WorkflowStatus(data["status"]),
             created_at=data["created_at"],
             metadata=data.get("metadata", {}),
+            correlation_id=data.get("correlation_id"),
         )

@@ -41,7 +41,11 @@ class WorkflowWorker(BaseWorker):
         if not steps:
             return
             
-        workflow_id = await self.engine.create_workflow(goal, steps)
+        workflow_id = await self.engine.create_workflow(
+            goal,
+            steps,
+            correlation_id=event.correlation_id,
+        )
         self.logger.info("workflow_initiated", extra={"workflow_id": workflow_id, "goal": goal})
         await self.engine.start_workflow(workflow_id)
 

@@ -1,11 +1,14 @@
 """Unit tests for Ω.6 Emotional Presence — Tone modulation."""
 import logging
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from core.cognition.tone_detector import detect_tone
 from core.cognition.cognitive_state import CognitiveStateEngine
+from core.events.bus import EventBus
 from core.llm.llm_worker import LlmWorker
+from core.orchestrator.conversation import OrchestratorWorker
+from core.router.rules import Intent, IntentName
 from core.tools.tool_registry import ToolRegistry
 
 
@@ -23,6 +26,51 @@ def test_tone_detector_curious():
 
 def test_tone_detector_warm():
     assert detect_tone("I'm frustrated, help me") == "warm"
+
+
+def test_tone_detector_explicit_confidence():
+    assert detect_tone("I am certain this is the right answer.") == "confident"
+
+
+def test_tone_detector_discouragement_is_warm():
+    assert detect_tone("I feel discouraged and could use encouragement.") == "warm"
+
+
+def test_tone_detector_neutral_instruction():
+    assert detect_tone("Please explain how a database index works.") == "neutral"
+
+
+def test_tone_detector_factual_instruction():
+    assert detect_tone("Give the exact date and numeric measurements only.") == "factual"
+
+
+@pytest.mark.asyncio
+async def test_emotional_tone_changes_delivery_prompt_only():
+    bus = EventBus()
+    await bus.start()
+    router = AsyncMock()
+    router.route.return_value = Intent(
+        IntentName.CHAT,
+        1.0,
+        {"response_text": "answer"},
+        source="unit_test",
+    )
+    engine = CognitiveStateEngine(bus)
+    engine.current_tone = "warm"
+    orchestrator = OrchestratorWorker(bus, router, MagicMock(), cognitive_state=engine)
+    orchestrator.active_turn_id = "turn-tone-test"
+    orchestrator.response_gate.wait_for_readiness = AsyncMock(return_value=True)
+    orchestrator._request_memory_context = AsyncMock(return_value="")
+    orchestrator.injector.get_style_instructions = MagicMock(return_value="base personality")
+
+    await orchestrator._route_and_execute("Explain this", "turn-tone-test", "corr-tone-test")
+
+    route_kwargs = router.route.await_args.kwargs
+    assert "supportive, friendly, and compassionate" not in route_kwargs["personality_instructions"]
+    assert "supportive, friendly, and compassionate" in route_kwargs["chat_instructions"]
+    assert "base personality" in route_kwargs["personality_instructions"]
+    assert "base personality" in route_kwargs["chat_instructions"]
+    await bus.stop()
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,12 @@ def test_live_harness_counts_successful_workflow_graph_as_completion():
     assert completion_outcome(events) == "completed"
 
 
+def test_live_harness_counts_direct_tool_response_as_completion():
+    events = [{"event": "RESPONSE_READY"}]
+
+    assert completion_outcome(events) == "completed"
+
+
 def test_live_harness_prefers_workflow_failure_over_partial_completion():
     events = [
         {"event": "ASSISTANT_RESPONSE_COMPLETED"},

@@ -98,7 +98,11 @@ def completion_outcome(events: list[dict[str, Any]]) -> str:
     event_types = {item.get("event") for item in events}
     if "ACTION_GRAPH_FAILED" in event_types:
         return "workflow_failed"
-    if "ACTION_GRAPH_COMPLETED" in event_types or "ASSISTANT_RESPONSE_COMPLETED" in event_types:
+    if event_types.intersection({
+        "ACTION_GRAPH_COMPLETED",
+        "ASSISTANT_RESPONSE_COMPLETED",
+        "RESPONSE_READY",
+    }):
         return "completed"
     return "no_completion_event"
 

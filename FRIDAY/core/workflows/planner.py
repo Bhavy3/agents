@@ -125,6 +125,23 @@ class BoundedPlanner:
                     "planner_remember_fact_alias_normalized",
                     extra={"step": i, "source_parameter": "input"},
                 )
+            if (
+                intent == "remember"
+                and (
+                    "fact" not in params
+                    or params.get("fact") is None
+                    or isinstance(params.get("fact"), str) and not params["fact"].strip()
+                )
+                and i > 0
+                and validated[i - 1]["intent"] == "search_web"
+                and original_goal
+                and PLANNER_REMEMBER_AUTH_TRIGGER.search(original_goal)
+            ):
+                params["fact"] = f"{{{{step_{i - 1}_result}}}}"
+                logger.warning(
+                    "planner_empty_remember_fact_uses_previous_search",
+                    extra={"step": i, "source_step": i - 1},
+                )
 
             # Validate parameter substitution restrictions: no {{step_N_result}} in path/command/key/app
             for p_name, p_val in params.items():

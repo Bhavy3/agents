@@ -48,6 +48,45 @@ def test_remember_input_alias_normalizes_to_fact():
     assert plan == [{"intent": "remember", "parameters": {"fact": "Paris is the capital of France."}}]
 
 
+def test_empty_remember_fact_after_search_uses_previous_result():
+    planner = BoundedPlanner(_make_mock_ollama("[]"))
+    plan = planner.validate_plan(
+        [
+            {"intent": "search_web", "parameters": {"query": "capital of France"}},
+            {"intent": "remember", "parameters": {"fact": ""}},
+        ],
+        original_goal="First search for the capital of France, then remember it.",
+    )
+
+    assert plan[1]["parameters"]["fact"] == "{{step_0_result}}"
+
+
+def test_missing_remember_fact_after_search_uses_previous_result():
+    planner = BoundedPlanner(_make_mock_ollama("[]"))
+    plan = planner.validate_plan(
+        [
+            {"intent": "search_web", "parameters": {"query": "capital of France"}},
+            {"intent": "remember", "parameters": {}},
+        ],
+        original_goal="First search for the capital of France, then remember it.",
+    )
+
+    assert plan[1]["parameters"]["fact"] == "{{step_0_result}}"
+
+
+def test_null_remember_fact_after_search_uses_previous_result():
+    planner = BoundedPlanner(_make_mock_ollama("[]"))
+    plan = planner.validate_plan(
+        [
+            {"intent": "search_web", "parameters": {"query": "capital of France"}},
+            {"intent": "remember", "parameters": {"fact": None}},
+        ],
+        original_goal="First search for the capital of France, then remember it.",
+    )
+
+    assert plan[1]["parameters"]["fact"] == "{{step_0_result}}"
+
+
 @pytest.mark.asyncio
 async def test_planner_invalid_json_fallback(caplog):
     client = _make_mock_ollama("This is not JSON: {invalid}")

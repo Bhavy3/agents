@@ -4,6 +4,7 @@ import inspect
 import re
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -159,6 +160,8 @@ class OrchestratorWorker(BaseWorker):
         self.context: list[dict[str, str]] = []
         self._routing_task: asyncio.Task | None = None
         self._turn_start_pending = False
+        self._queued_cli_turns: deque[tuple[str, str | None]] = deque()
+        self._pending_workflow_correlations: set[str] = set()
         self._last_activity_time = time.perf_counter()
         
         self._chat_confirmed = False
@@ -202,7 +205,35 @@ class OrchestratorWorker(BaseWorker):
         self.event_bus.subscribe(EventType.ACTION_FAILED, self._handle_web_search_failed)
         self.event_bus.subscribe(EventType.ACTION_TIMEOUT, self._handle_web_search_timeout)
         self.event_bus.subscribe(EventType.CONVERSATION_INTERRUPTED, self._handle_web_search_interrupted)
+        self.event_bus.subscribe(EventType.ACTION_GRAPH_COMPLETED, self._handle_workflow_terminal)
+        self.event_bus.subscribe(EventType.ACTION_GRAPH_FAILED, self._handle_workflow_terminal)
         await super().run()
+
+    async def _handle_workflow_terminal(self, event: Event) -> None:
+        correlation_id = event.correlation_id or ""
+        if correlation_id not in self._pending_workflow_correlations:
+            return
+        self._pending_workflow_correlations.discard(correlation_id)
+        async with self._state_lock:
+            turn_id = self._turn_ids_by_correlation_id.get(correlation_id)
+            if turn_id and self.active_turn_id == turn_id:
+                self.active_turn_id = None
+                self.active_speaker = None
+                self._routing_task = None
+        await self._start_next_cli_turn()
+
+    async def _start_next_cli_turn(self) -> None:
+        async with self._state_lock:
+            if (
+                self._turn_start_pending
+                or self.active_turn_id is not None
+                or self.active_speaker is not None
+                or not self._queued_cli_turns
+            ):
+                return
+            text, correlation_id = self._queued_cli_turns.popleft()
+            self._turn_start_pending = True
+        asyncio.create_task(self._initiate_turn(text, correlation_id))
 
     async def _handle_web_search_completed(self, event: Event) -> None:
         if event.payload.get("tool_name") != "search_web":
@@ -285,12 +316,14 @@ class OrchestratorWorker(BaseWorker):
         if not was_pending and not pending.response_started:
             return
         await self._cancel_web_search_ack(correlation_id)
+        turn_released = False
         async with self._state_lock:
             if self.active_turn_id == pending.turn_id:
                 self.context.append({"role": "assistant", "content": message})
                 self.active_turn_id = None
                 self.active_speaker = None
                 self._routing_task = None
+                turn_released = True
         await self.event_bus.publish(Event.create(
             EventType.ASSISTANT_RESPONSE_PARTIAL,
             {"text": message, "turn_id": pending.turn_id},
@@ -317,6 +350,8 @@ class OrchestratorWorker(BaseWorker):
             self.name,
             correlation_id,
         ))
+        if turn_released:
+            await self._start_next_cli_turn()
 
     async def _cancel_web_search_ack(self, correlation_id: str) -> None:
         task = self._web_search_ack_tasks.pop(correlation_id, None)
@@ -601,10 +636,10 @@ class OrchestratorWorker(BaseWorker):
         text = event.payload.get("text", "").strip()
         if not text:
             return
-            
-        # Cancel active turn if CLI is used
-        if await self._handle_speech_started(event):
-            await self._schedule_turn(text, event.correlation_id)
+
+        async with self._state_lock:
+            self._queued_cli_turns.append((text, event.correlation_id))
+        await self._start_next_cli_turn()
 
     async def _schedule_turn(self, text: str, correlation_id: str | None) -> None:
         async with self._state_lock:
@@ -798,6 +833,8 @@ class OrchestratorWorker(BaseWorker):
                     # Since Orchestrator doesn't have direct ref to WorkflowWorker instance, 
                     # we'll assume it's part of the engine reachable via app context or we pass it in.
                     
+                    if correlation_id:
+                        self._pending_workflow_correlations.add(correlation_id)
                     await self.event_bus.publish(Event.create(
                         EventType.ACTION_GRAPH_STARTED,
                         {"goal": text, "steps": plan},
@@ -955,13 +992,18 @@ class OrchestratorWorker(BaseWorker):
                 self._pending_web_searches.pop(deferred_web_search, None)
                 await self._cancel_web_search_ack(deferred_web_search)
         finally:
+            start_next_cli_turn = False
             async with self._state_lock:
                 if self.active_turn_id == turn_id:
                     self._routing_task = None
-                    if deferred_web_search not in self._pending_web_searches:
+                    workflow_pending = correlation_id in self._pending_workflow_correlations
+                    if deferred_web_search not in self._pending_web_searches and not workflow_pending:
                         self.active_turn_id = None
                         if self.active_speaker == "assistant":
                             self.active_speaker = None
+                        start_next_cli_turn = True
+            if start_next_cli_turn:
+                await self._start_next_cli_turn()
 
     @staticmethod
     def _build_chat_prompt(
@@ -1049,6 +1091,7 @@ class OrchestratorWorker(BaseWorker):
                     self._chunk_buffer.append(chunk)
 
     async def _handle_stream_completed(self, event: Event) -> None:
+        turn_released = False
         async with self._state_lock:
             turn_id = self._turn_ids_by_correlation_id.get(event.correlation_id or "")
             if turn_id is None:
@@ -1075,6 +1118,7 @@ class OrchestratorWorker(BaseWorker):
                     self._pending_web_searches.pop(event.correlation_id, None)
                     self.active_turn_id = None
                     self._routing_task = None
+                    turn_released = True
             self._turn_ids_by_correlation_id.pop(event.correlation_id or "", None)
             
         await self._publish_assistant_lifecycle(
@@ -1085,6 +1129,8 @@ class OrchestratorWorker(BaseWorker):
                 event.correlation_id,
             )
         )
+        if turn_released:
+            await self._start_next_cli_turn()
 
     async def _handle_stream_cancelled(self, event: Event) -> None:
         async with self._state_lock:

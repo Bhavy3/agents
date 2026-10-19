@@ -81,7 +81,11 @@ async def test_text_prompts_arriving_during_a_turn_are_queued_not_dropped():
         ))
         await asyncio.sleep(0.03)
 
-    await _wait_until(lambda: len(completed) == 3)
+    for _ in range(300):
+        if len(completed) == 3:
+            break
+        await asyncio.sleep(0.01)
+    assert len(completed) == 3, [event.correlation_id for event in completed]
     assert [event.correlation_id for event in completed] == [item[0] for item in prompts]
     assert [event.payload["text"] for event in completed] == [
         f"Reply to {text}" for _, text in prompts

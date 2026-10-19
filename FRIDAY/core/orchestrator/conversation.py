@@ -40,7 +40,9 @@ _EXPLICIT_MEMORY_REQUEST = re.compile(
 _PERSONAL_MEMORY_QUERY = re.compile(
     r"\b(?:my|mine|do you remember|what do you remember|"
     r"what (?:did|have) i (?:tell|told|say|said) you|"
-    r"remember what i (?:told|said))\b",
+    r"remember what i (?:told|said)|"
+    r"what (?:was|is) (?:the )?(?:[\w'-]+\s+){0,4}"
+    r"(?:code|color|name|date|number|address|favorite|preference|detail|fact|answer|password))\b",
     re.IGNORECASE,
 )
 _WORKFLOW_REQUEST = re.compile(

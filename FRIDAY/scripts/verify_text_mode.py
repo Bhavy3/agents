@@ -2,8 +2,8 @@
 
 Use ``--mode local`` for memory persistence and local router/tone decisions that
 do not require llama-server. Use ``--mode live`` after starting the real server
-for application prompts. This harness never enables audio and never writes to
-the repository memory database.
+for application prompts. This harness never enables audio and stores both
+memory and workflow state under the external audit directory.
 """
 
 from __future__ import annotations
@@ -110,6 +110,9 @@ def completion_outcome(events: list[dict[str, Any]]) -> str:
 def prepare_memory_copy(audit_dir: Path) -> Path:
     audit_dir.mkdir(parents=True, exist_ok=True)
     target = audit_dir / "friday_memory_audit_copy.db"
+    workflow_store = audit_dir / "data" / "workflows" / "active_workflows.json"
+    workflow_store.parent.mkdir(parents=True, exist_ok=True)
+    os.environ["FRIDAY_WORKFLOW_STORE_PATH"] = str(workflow_store)
     source = DEFAULT_MEMORY_DB
     if source.is_file():
         shutil.copy2(source, target)

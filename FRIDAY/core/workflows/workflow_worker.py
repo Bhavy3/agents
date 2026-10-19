@@ -1,4 +1,5 @@
 import asyncio
+import os
 from ..workers.base_worker import BaseWorker
 from ..events.bus import EventBus
 from ..events.event_types import EventType
@@ -16,7 +17,11 @@ class WorkflowWorker(BaseWorker):
         super().__init__("workflow_worker", event_bus)
         self.engine = WorkflowEngine(event_bus)
         self.recovery = WorkflowRecovery()
-        self.store = store or WorkflowStore()
+        if store is not None:
+            self.store = store
+        else:
+            store_path = os.getenv("FRIDAY_WORKFLOW_STORE_PATH")
+            self.store = WorkflowStore(store_path) if store_path else WorkflowStore()
         self._retry_tasks: dict[str, asyncio.Task] = {}
         self._startup_recovery_done = False
         self._recovered_workflow_ids: set[str] = set()

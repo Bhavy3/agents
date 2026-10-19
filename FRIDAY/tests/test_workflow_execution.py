@@ -12,6 +12,17 @@ from core.workflows.store import WorkflowStore
 from core.tools.tool_worker import ToolWorker
 
 
+def test_workflow_worker_uses_configured_store_path(monkeypatch, tmp_path):
+    from core.workflows.workflow_worker import WorkflowWorker
+
+    store_path = tmp_path / "isolated-workflows.json"
+    monkeypatch.setenv("FRIDAY_WORKFLOW_STORE_PATH", str(store_path))
+
+    worker = WorkflowWorker(EventBus())
+
+    assert worker.store.storage_path == str(store_path)
+
+
 @pytest.mark.asyncio
 async def test_tool_chaining_with_bounded_output():
     """Verify Step 2 receives Step 1's bounded output within 1500 chars."""

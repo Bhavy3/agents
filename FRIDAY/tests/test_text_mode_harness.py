@@ -1,3 +1,4 @@
+from scripts import verify_text_mode
 from scripts.verify_text_mode import completion_outcome, events_for_correlation
 
 
@@ -30,3 +31,16 @@ def test_live_harness_prefers_workflow_failure_over_partial_completion():
     ]
 
     assert completion_outcome(events) == "workflow_failed"
+
+
+def test_harness_isolates_workflow_store_with_audit_memory_copy(monkeypatch, tmp_path):
+    source = tmp_path / "source.db"
+    source.write_bytes(b"test-db")
+    monkeypatch.setattr(verify_text_mode, "DEFAULT_MEMORY_DB", source)
+    monkeypatch.delenv("FRIDAY_WORKFLOW_STORE_PATH", raising=False)
+
+    verify_text_mode.prepare_memory_copy(tmp_path / "audit")
+
+    assert verify_text_mode.os.environ["FRIDAY_WORKFLOW_STORE_PATH"] == str(
+        tmp_path / "audit" / "data" / "workflows" / "active_workflows.json"
+    )

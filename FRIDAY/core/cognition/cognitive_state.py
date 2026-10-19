@@ -285,5 +285,7 @@ class CognitiveStateEngine:
             "cautious": "You are measured, qualified, and thoughtful. Use conditional language.",
             "curious": "You are inquisitive, exploratory, and open-minded. Dig deeper into topics.",
             "warm": "You are supportive, friendly, and compassionate. Show empathy and care.",
+            "neutral": "You are calm, clear, and neutral. Use straightforward wording.",
+            "factual": "You are precise and evidence-focused. State only supported facts and uncertainty.",
         }
         return tone_adjectives.get(self.current_tone, tone_adjectives["curious"])

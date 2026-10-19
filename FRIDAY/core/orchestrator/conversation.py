@@ -756,11 +756,15 @@ class OrchestratorWorker(BaseWorker):
             base_instructions = self.injector.get_style_instructions(self.current_style, self.current_mode)
             tone_ctx = self.cognitive_state.get_tone_context()
             if tone_ctx:
-                base_instructions = f"{tone_ctx}\n\n{base_instructions}"
+                delivery_instructions = f"{tone_ctx}\n\n{base_instructions}"
+            else:
+                delivery_instructions = base_instructions
             mem_ctx = await self._request_memory_context(text)
                 
+            # Emotional context may shape the answer, but must not steer the
+            # intent classifier's choice of tools or actions.
             router_instructions = base_instructions
-            chat_instructions = base_instructions
+            chat_instructions = delivery_instructions
             if mem_ctx:
                 chat_instructions += f"\n\nSystem Memory/Context:\n{mem_ctx}"
 
@@ -909,7 +913,7 @@ class OrchestratorWorker(BaseWorker):
                         query=str(intent.parameters.get("query", text))[:WEB_SEARCH_QUERY_MAX_CHARS],
                         user_text=text,
                         turn_id=turn_id,
-                        personality_instructions=base_instructions,
+                        personality_instructions=delivery_instructions,
                         memory_context=mem_ctx,
                     )
                     self._web_search_ack_tasks[action_correlation_id] = asyncio.create_task(

@@ -4,30 +4,53 @@ from typing import Optional
 
 def detect_tone(utterance: str, history: Optional[list[str]] = None, default: str = "curious") -> str:
     """Infer emotional tone from utterance and conversation history."""
-    # Confidence markers: "can you", "help", "do this" (confident)
-    # Uncertainty markers: "not sure", "maybe", "could you" (cautious)
-    # Exploration markers: "explore", "dig into", "understand why" (curious)
-    # Emotional markers: "frustrated", "worried", "upset", "thanks" (warm)
+    # Keep tone inference explicit and delivery-focused. Polite requests remain
+    # supported for compatibility; explicit self-reports provide stronger cues.
 
     utterance_lower = utterance.lower()
     history_lower = " ".join(history or []).lower()
     combined = utterance_lower + " " + history_lower
 
-    confidence_keywords = {"can you", "help", "do this", "execute", "build", "fix"}
-    caution_keywords = {"not sure", "maybe", "unsure", "could you", "would you", "might"}
-    curiosity_keywords = {"explore", "dig", "understand why", "how come", "deep dive"}
-    warmth_keywords = {"frustrated", "worried", "upset", "thanks", "appreciate", "sorry"}
+    confidence_keywords = {
+        "can you", "help", "do this", "execute", "build", "fix",
+        "certain", "confident", "definitely", "absolutely", "no doubt",
+    }
+    caution_keywords = {
+        "not sure", "maybe", "unsure", "could you", "would you", "might",
+        "may be mistaken", "may be wrong", "please check carefully",
+    }
+    curiosity_keywords = {
+        "explore", "dig", "understand why", "how come", "deep dive",
+        "wonder", "curious", "why does", "how does",
+    }
+    warmth_keywords = {
+        "frustrated", "worried", "upset", "thanks", "appreciate", "sorry",
+        "discouraged", "overwhelmed", "encouragement", "need support",
+        "could use support",
+    }
+    factual_keywords = {
+        "exact date", "numeric measurement", "numeric measurements", "facts only",
+        "data only", "numbers only", "evidence only",
+    }
+    neutral_keywords = {
+        "please explain", "explain how", "please describe", "neutral tone",
+        "straightforward explanation",
+    }
 
     confidence_score = sum(1 for kw in confidence_keywords if kw in utterance_lower)
     caution_score = sum(1 for kw in caution_keywords if kw in utterance_lower)
     curiosity_score = sum(1 for kw in curiosity_keywords if kw in utterance_lower)
     warmth_score = sum(1 for kw in warmth_keywords if kw in combined)
+    factual_score = sum(1 for kw in factual_keywords if kw in utterance_lower)
+    neutral_score = sum(1 for kw in neutral_keywords if kw in utterance_lower)
 
     scores = {
         "warm": warmth_score,
         "cautious": caution_score,
         "curious": curiosity_score,
         "confident": confidence_score,
+        "factual": factual_score,
+        "neutral": neutral_score,
     }
 
     # Fallback to default if no strong signal

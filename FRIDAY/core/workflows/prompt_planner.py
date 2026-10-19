@@ -1,5 +1,6 @@
 from typing import Any, Optional
 from ..llm.ollama_client import OllamaClient
+from ..logging.logger import get_logger
 from ..tools.tool_registry import ToolRegistry
 from .planner import BoundedPlanner
 
@@ -10,6 +11,7 @@ class PromptPlanner:
     def __init__(self, ollama_client: OllamaClient, tool_registry: Optional[ToolRegistry] = None):
         self.planner = BoundedPlanner(ollama_client, tool_registry=tool_registry)
         self.last_rejection_reason: Optional[str] = None
+        self.logger = get_logger("workflows.prompt_planner")
 
     async def create_plan_for_goal(self, goal: str) -> list[dict[str, Any]]:
         """Decomposes a user goal into a list of executable tool steps."""
@@ -19,6 +21,10 @@ class PromptPlanner:
             response, metrics = await self.planner.ollama.generate(prompt)
             if not metrics.success or not response:
                 self.last_rejection_reason = "llm_error"
+                self.logger.error(
+                    "workflow_planning_generation_failed",
+                    extra={"error": metrics.error or "empty_response"},
+                )
                 return []
             import json
             clean_json = response.strip()
@@ -42,5 +48,6 @@ class PromptPlanner:
                 self.last_rejection_reason = "invalid_plan"
             return []
         except Exception:
-            self.last_rejection_reason = "planning_failed"
+            self.logger.exception("workflow_planning_generation_failed")
+            self.last_rejection_reason = "llm_error"
             return []

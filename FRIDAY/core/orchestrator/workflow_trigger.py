@@ -30,7 +30,14 @@ class WorkflowTriggerMixin:
             return False
 
         self.logger.info("attempting_workflow_planning", extra={"goal": text})
-        plan = await self.prompt_planner.create_plan_for_goal(text)
+        try:
+            plan = await self.prompt_planner.create_plan_for_goal(text)
+        except Exception:
+            self.logger.exception(
+                "workflow_planning_failed",
+                extra={"turn_id": turn_id, "goal": text},
+            )
+            return False
         if plan:
             self.logger.info("workflow_plan_generated", extra={"steps": len(plan)})
             # Preserve the historical app import performed on accepted plans.
@@ -47,6 +54,12 @@ class WorkflowTriggerMixin:
             return True
 
         reason = getattr(self.prompt_planner, "last_rejection_reason", None)
+        if reason in {"llm_error", "planning_failed"}:
+            self.logger.error(
+                "workflow_planning_failed",
+                extra={"turn_id": turn_id, "reason": reason},
+            )
+            return False
         if reason == "remember_not_authorized":
             message = "I couldn't create a plan for that workflow. If you want me to remember something, please state it explicitly."
         elif reason == "unsafe_parameter_substitution":

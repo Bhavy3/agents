@@ -97,6 +97,56 @@ async def test_text_prompts_arriving_during_a_turn_are_queued_not_dropped():
 
 
 @pytest.mark.asyncio
+async def test_workflow_planner_exception_falls_back_to_chat_and_completes_once(caplog):
+    from core.router.rules import Intent, IntentName
+
+    bus = EventBus()
+    await bus.start()
+    router = AsyncMock()
+    router.route.return_value = Intent(
+        IntentName.CHAT,
+        1.0,
+        {"response_text": "I can still help with that."},
+        source="test_fallback",
+    )
+    planner = AsyncMock()
+    planner.create_plan_for_goal.side_effect = RuntimeError("planner unavailable")
+    orchestrator = OrchestratorWorker(bus, router, AsyncMock(), planner)
+    orchestrator.response_gate.wait_for_readiness = AsyncMock(return_value=True)
+    orchestrator._request_memory_context = AsyncMock(return_value="")
+    orchestrator.active_turn_id = "workflow-fallback-turn"
+    orchestrator.active_speaker = "assistant"
+    completed = []
+
+    async def capture(event):
+        completed.append(event)
+
+    bus.subscribe(EventType.RESPONSE_READY, capture)
+    bus.subscribe(EventType.CONVERSATION_TURN_ENDED, capture)
+    with caplog.at_level("ERROR"):
+        await orchestrator._route_and_execute(
+            "run workflow to diagnose the service",
+            "workflow-fallback-turn",
+            "workflow-fallback-correlation",
+        )
+    await bus.drain()
+
+    assert router.route.await_count == 1
+    assert [event.event_type for event in completed] == [
+        EventType.RESPONSE_READY,
+        EventType.CONVERSATION_TURN_ENDED,
+    ]
+    assert completed[0].payload["text"] == "I can still help with that."
+    assert orchestrator.active_turn_id is None
+    assert orchestrator.active_speaker is None
+    assert any(
+        record.getMessage() == "workflow_planning_failed" and record.exc_info
+        for record in caplog.records
+    )
+    await bus.stop()
+
+
+@pytest.mark.asyncio
 async def test_queued_text_resumes_after_workflow_terminal_event():
     bus = EventBus()
     await bus.start()

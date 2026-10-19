@@ -2,6 +2,7 @@ from typing import Callable, Dict, Any
 from .browser_tools import BrowserTools
 from .filesystem_tools import FilesystemTools
 from .desktop_tools import DesktopTools
+from .system_tools import SystemTools
 
 
 class ToolRegistry:
@@ -15,6 +16,7 @@ class ToolRegistry:
         self._browser = BrowserTools()
         self._fs = FilesystemTools()
         self._desktop = DesktopTools()
+        self._system = SystemTools()
         
         self._register_defaults()
 
@@ -37,6 +39,7 @@ class ToolRegistry:
 
         # Memory
         self.register("remember", self._remember)
+        self.register("get_time", self._system.get_time)
 
     async def _remember(self, fact: str = "", text: str = "", content: str = "", **kwargs) -> Any:
         from .tool_models import ToolResult

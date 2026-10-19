@@ -59,6 +59,7 @@ class IntentName(StrEnum):
     HELP = "help"
     EXIT = "exit"
     REMEMBER = "remember"
+    GET_TIME = "get_time"
     CHAT = "chat"
     UNKNOWN = "unknown"
 
@@ -96,6 +97,13 @@ def route_by_rules(text: str) -> Intent | None:
     normalized = " ".join(text.strip().lower().split())
     if not normalized:
         return None
+
+    if re.fullmatch(
+        r"(?:what time is it(?: right now)?|what(?:'s| is) (?:the )?(?:local )?time(?: right now)?|"
+        r"tell me (?:the )?(?:local )?time(?: right now)?|current time(?: please)?)\??",
+        normalized,
+    ):
+        return Intent(IntentName.GET_TIME, 1.0, {})
 
     if normalized in {"open google", "open google.com", "launch google", "launch google.com"}:
         return Intent(IntentName.OPEN_URL, 1.0, {"url": "https://www.google.com"})

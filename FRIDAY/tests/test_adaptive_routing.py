@@ -66,6 +66,25 @@ async def test_routing_respects_budget():
 
 
 @pytest.mark.asyncio
+async def test_route_reports_active_fallback_when_model_switch_fails(caplog):
+    """A failed model switch must not be reported as an executed route."""
+    import logging
+
+    caplog.set_level(logging.INFO, logger="core.router.adaptive_router")
+    mock_mm = MagicMock()
+    mock_mm.current_model = "3b"
+    mock_mm.switch_model = AsyncMock(return_value=False)
+    router = AdaptiveRouter(model_manager=mock_mm)
+
+    model, reason = await router.route("analyze the trends")
+
+    assert mock_mm.switch_model.await_count == 1
+    assert model == "3b"
+    assert reason == "complex_query_needs_7b; switch_failed_fallback_3b"
+    assert "routing_executed: model=3b" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_fallback_on_timeout():
     """When 3B inference times out, automatically escalates to 7B and retries."""
     mock_client = MagicMock()

@@ -44,9 +44,13 @@ class AdaptiveRouter:
     async def route(self, utterance: str) -> Tuple[str, str]:
         """Execute routing decision."""
         target_model, reason = await self.decide_model(utterance)
+        active_model = target_model
 
         if self.model_manager and target_model != self.model_manager.current_model:
-            await self.model_manager.switch_model(target_model, reason)
+            switched = await self.model_manager.switch_model(target_model, reason)
+            if switched is False:
+                active_model = self.model_manager.current_model
+                reason = f"{reason}; switch_failed_fallback_{active_model}"
 
-        logger.info(f"routing_executed: model={target_model}, reason={reason}")
-        return target_model, reason
+        logger.info(f"routing_executed: model={active_model}, reason={reason}")
+        return active_model, reason

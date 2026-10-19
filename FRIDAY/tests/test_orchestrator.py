@@ -25,6 +25,25 @@ async def _wait_until(predicate):
 
 
 @pytest.mark.asyncio
+async def test_normal_orchestrator_shutdown_does_not_log_timeout_cancellation(caplog):
+    bus = EventBus()
+    await bus.start()
+    orchestrator = OrchestratorWorker(bus, None, AsyncMock())
+    task = asyncio.create_task(orchestrator.work())
+    await asyncio.sleep(0)
+
+    with caplog.at_level("WARNING", logger="workers.orchestrator"):
+        task.cancel()
+        await task
+
+    assert not any(
+        record.getMessage() == "workflow_timeout_monitor_cancelled"
+        for record in caplog.records
+    )
+    await bus.stop()
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_turn_ownership():
     from core.router.rules import Intent, IntentName
     

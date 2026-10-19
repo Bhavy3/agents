@@ -57,6 +57,7 @@ async def test_fast_chat_streams_once_with_safe_chat_prompt_and_is_observable():
         await bus.drain()
 
         router.route.assert_awaited_once()
+        orchestrator.response_gate.wait_for_readiness.assert_not_awaited()
         stream.stream_reasoning.assert_awaited_once()
         prompt = stream.stream_reasoning.await_args.args[0]
         assert "Memory capability:" in prompt

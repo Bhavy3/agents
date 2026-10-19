@@ -289,7 +289,7 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
             return
             
         if await self._handle_speech_started(event):
-            await self._schedule_turn(text, event.correlation_id)
+            await self._schedule_turn(text, event.correlation_id, voice_input=True)
 
     async def _handle_cli_text(self, event: Event) -> None:
         """Process text directly from CLI."""
@@ -301,14 +301,26 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
             self._queued_cli_turns.append((text, event.correlation_id))
         await self._start_next_cli_turn()
 
-    async def _schedule_turn(self, text: str, correlation_id: str | None) -> None:
+    async def _schedule_turn(
+        self,
+        text: str,
+        correlation_id: str | None,
+        *,
+        voice_input: bool = False,
+    ) -> None:
         async with self._state_lock:
             if self._turn_start_pending:
                 return
             self._turn_start_pending = True
-        asyncio.create_task(self._initiate_turn(text, correlation_id))
+        asyncio.create_task(self._initiate_turn(text, correlation_id, voice_input=voice_input))
 
-    async def _initiate_turn(self, text: str, correlation_id: str | None) -> None:
+    async def _initiate_turn(
+        self,
+        text: str,
+        correlation_id: str | None,
+        *,
+        voice_input: bool = False,
+    ) -> None:
         correlation_id = correlation_id or str(uuid.uuid4())
         self._last_activity_time = time.perf_counter()
         memory_content = extract_explicit_memory_content(text)
@@ -390,7 +402,12 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
                 
                 # Spawn routing task so Orchestrator remains unblocked
                 self._routing_task = asyncio.create_task(
-                    self._route_and_execute(text, turn_id, correlation_id)
+                    self._route_and_execute(
+                        text,
+                        turn_id,
+                        correlation_id,
+                        voice_input=voice_input,
+                    )
                 )
 
         if owns_turn:
@@ -415,17 +432,25 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
             humor_level=style_data.get("humor_level", 0.0)
         )
 
-    async def _route_and_execute(self, text: str, turn_id: str, correlation_id: str | None) -> None:
+    async def _route_and_execute(
+        self,
+        text: str,
+        turn_id: str,
+        correlation_id: str | None,
+        *,
+        voice_input: bool = False,
+    ) -> None:
         start_time = time.perf_counter()
         deferred_web_search: str | None = None
         try:
-            ready = await self.response_gate.wait_for_readiness(
-                turn_id,
-                text_length=len(text),
-                momentum=0.0,
-            )
-            if not ready:
-                return
+            if voice_input:
+                ready = await self.response_gate.wait_for_readiness(
+                    turn_id,
+                    text_length=len(text),
+                    momentum=0.0,
+                )
+                if not ready:
+                    return
 
             if extract_explicit_memory_content(text) is not None:
                 response_text = "I'll remember that."

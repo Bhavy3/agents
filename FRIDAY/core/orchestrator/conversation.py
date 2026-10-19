@@ -26,6 +26,7 @@ from core.orchestrator.memory_context import (
     MEMORY_QUERY_TIMEOUT_SECONDS,
     MemoryContextMixin,
 )
+from core.orchestrator.workflow_trigger import WorkflowTriggerMixin, _WORKFLOW_REQUEST
 from core.orchestrator.web_search import (
     PendingWebSearch,
     WEB_ANSWER_NOT_FOUND,
@@ -51,17 +52,7 @@ _PERSONAL_MEMORY_QUERY = re.compile(
     r"(?:code|color|name|date|number|address|favorite|preference|detail|fact|answer|password))\b",
     re.IGNORECASE,
 )
-_WORKFLOW_REQUEST = re.compile(
-    r"^\s*(?:(?:hey\s+friday|please|can\s+you|could\s+you)\s+)?(?:run|execute|start|trigger|create)\s+(?:a\s+)?workflow\b"
-    r"|^\s*(?:(?:hey\s+friday|please|can\s+you|could\s+you)\s+)?(?:debug\s+the\s+project|fix\s+the\s+(?:bug|issue|code|project))\b"
-    r"|\b(?:(?:run|execute|start|trigger|create)\s+(?:a\s+)?workflow"
-    r"|and\s+remember\s+(?:it|the\s+answer|that))\b"
-    r"|\b(?:first|firstly|first\s+off|1[.)])[\s,]+(?:search|look|find|check|open|run|get|read|write|remember|save)\b.*\bthen\b",
-    re.IGNORECASE,
-)
-
-
-class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin):
+class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, WorkflowTriggerMixin):
     """Coordinates conversation turns, routing, and interruptions."""
 
     def __init__(
@@ -495,53 +486,8 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin):
             else:
                 intent = None
 
-            # Check if this should be a multi-step workflow
-            if self.prompt_planner and _WORKFLOW_REQUEST.search(text):
-                self.logger.info("attempting_workflow_planning", extra={"goal": text})
-                plan = await self.prompt_planner.create_plan_for_goal(text)
-                if plan:
-                    self.logger.info("workflow_plan_generated", extra={"steps": len(plan)})
-                    # Convert dict plan to engine format and start
-                    from core.app import FridayApp
-                    # We need access to the workflow worker
-                    # For simplicity in this session, we'll emit a WORKFLOW_STARTED event
-                    # But the requirement is to use the engine.
-                    # Since Orchestrator doesn't have direct ref to WorkflowWorker instance, 
-                    # we'll assume it's part of the engine reachable via app context or we pass it in.
-                    
-                    if correlation_id:
-                        self._pending_workflow_correlations.add(correlation_id)
-                    await self.event_bus.publish(Event.create(
-                        EventType.ACTION_GRAPH_STARTED,
-                        {"goal": text, "steps": plan},
-                        self.name,
-                        correlation_id
-                    ))
-                    return
-                else:
-                    reason = getattr(self.prompt_planner, "last_rejection_reason", None)
-                    if reason == "remember_not_authorized":
-                        msg = "I couldn't create a plan for that workflow. If you want me to remember something, please state it explicitly."
-                    elif reason == "unsafe_parameter_substitution":
-                        msg = "I cannot run that workflow because previous step outputs cannot be substituted into sensitive parameters."
-                    elif reason == "llm_error":
-                        msg = "I was unable to generate a plan right now due to a planner service error."
-                    else:
-                        msg = "I couldn't create a valid plan for that workflow."
-
-                    await self.event_bus.publish(Event.create(
-                        EventType.RESPONSE_READY,
-                        {"text": msg, "turn_id": turn_id},
-                        self.name,
-                        correlation_id
-                    ))
-                    await self.event_bus.publish(Event.create(
-                        EventType.CONVERSATION_TURN_ENDED,
-                        {"turn_id": turn_id, "duration": round(time.perf_counter() - start_time, 3)},
-                        self.name,
-                        correlation_id
-                    ))
-                    return
+            if await self._try_start_workflow(text, turn_id, correlation_id, start_time):
+                return
 
             # Otherwise, proceed with simple routing. If memory had no relevant
             # personal fact, the normal router can still choose web search.

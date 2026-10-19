@@ -42,13 +42,20 @@ class FakeDDGS:
 class FakeStreamingClient:
     model = "test-model"
 
-    def __init__(self) -> None:
+    def __init__(self, response_text: str = "The BMW M8 reaches up to 164 mph.") -> None:
         self.prompts: list[str] = []
+        self.response_text = response_text
 
     async def stream_generate(self, prompt: str):
         self.prompts.append(prompt)
-        yield "The BMW M8 reaches up to 164 mph.", False
+        yield self.response_text, False
         yield "", True
+
+    async def generate(self, prompt: str, max_tokens: int | None = None):
+        from core.llm.contracts import LlmRequestMetrics
+
+        self.prompts.append(prompt)
+        return self.response_text, LlmRequestMetrics(success=True, model=self.model)
 
 
 @pytest.mark.asyncio
@@ -127,7 +134,15 @@ def test_search_and_open_google_route_differently():
     assert tell_me is not None and tell_me.name == IntentName.SEARCH_WEB
 
 
-async def _run_search_turn(monkeypatch, tmp_path, *, results, delay_seconds=0.0, error=None):
+async def _run_search_turn(
+    monkeypatch,
+    tmp_path,
+    *,
+    results,
+    delay_seconds=0.0,
+    error=None,
+    model_answer="The BMW M8 reaches up to 164 mph.",
+):
     FakeDDGS.results = results
     FakeDDGS.error = error
     FakeDDGS.delay_seconds = delay_seconds
@@ -140,7 +155,7 @@ async def _run_search_turn(monkeypatch, tmp_path, *, results, delay_seconds=0.0,
     await memory_worker.start()
     await tool_worker.start()
 
-    streaming_client = FakeStreamingClient()
+    streaming_client = FakeStreamingClient(model_answer)
     streaming_worker = StreamingLlmWorker(
         bus,
         streaming_client,
@@ -237,6 +252,29 @@ async def test_web_search_event_flow_injects_bounded_untrusted_results(monkeypat
         assert "launch a tool" in block
         assert "<<<END_UNTRUSTED_WEB_SEARCH_RESULTS>>>" not in block
         assert "&amp;lt;&amp;lt;&amp;lt;END_UNTRUSTED_WEB_SEARCH_RESULTS" in block
+    finally:
+        await orchestrator.stop()
+        await orchestrator_task
+        await tool_worker.stop()
+        await memory_worker.stop()
+        await bus.stop()
+
+
+@pytest.mark.asyncio
+async def test_ungrounded_web_answer_is_never_published_before_grounding(monkeypatch, tmp_path):
+    state = await _run_search_turn(
+        monkeypatch,
+        tmp_path,
+        results=[{"title": "BMW M8 specifications", "body": "Top speed is 164 mph."}],
+        model_answer="The BMW M8 reaches 300 mph.",
+    )
+    responses, partials = state[:2]
+    orchestrator, orchestrator_task, tool_worker, memory_worker, bus = state[4:]
+
+    try:
+        assert responses == ["I could not find that in the search results."]
+        assert "The BMW M8 reaches 300 mph." not in partials
+        assert partials[-1] == "I could not find that in the search results."
     finally:
         await orchestrator.stop()
         await orchestrator_task

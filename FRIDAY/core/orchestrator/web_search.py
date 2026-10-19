@@ -259,7 +259,9 @@ class WebSearchMixin:
                 f"User question: {pending.user_text[:WEB_SEARCH_QUERY_MAX_CHARS]}\n"
                 "Answer:"
             )
-            answer = await self.streaming_worker.stream_reasoning(prompt, correlation_id)
+            # Search answers must be checked against the result set before any
+            # model-generated text reaches the user's live response stream.
+            answer = await self.streaming_worker.generate_buffered(prompt)
             if not answer.strip():
                 await self._finish_web_search_with_message(
                     correlation_id,
@@ -275,6 +277,8 @@ class WebSearchMixin:
                     extra={"original_answer": answer, "results_chars": len(results)},
                 )
             answer = grounded
+
+            await self._publish_direct_response(answer, pending.turn_id, correlation_id)
 
             await self.event_bus.publish(Event.create(
                 EventType.RESPONSE_READY,

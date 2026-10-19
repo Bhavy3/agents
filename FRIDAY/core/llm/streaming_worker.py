@@ -113,6 +113,13 @@ class StreamingLlmWorker:
         finally:
             self._active_tasks.pop(stream_id, None)
 
+    async def generate_buffered(self, prompt: str, max_tokens: int | None = None) -> str:
+        """Generate text without publishing chunks before a caller can validate it."""
+        generated, metrics = await self.ollama.generate(prompt, max_tokens=max_tokens)
+        if not metrics.success or not isinstance(generated, str):
+            return ""
+        return generated
+
     async def _stream_task(self, stream_id: str, prompt: str, correlation_id: str | None = None) -> str:
         try:
             async for chunk, done in self.ollama.stream_generate(prompt):

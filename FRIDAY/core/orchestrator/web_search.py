@@ -12,8 +12,8 @@ from dataclasses import dataclass
 
 from core.events.event_types import EventType
 from core.events.models import Event
+from core.orchestrator.memory_context import MEMORY_CONTEXT_MAX_CHARS
 
-MEMORY_CONTEXT_MAX_CHARS = 1200
 WEB_SEARCH_RESULTS_MAX_CHARS = 1500
 WEB_SEARCH_HISTORY_MAX_CHARS = 1800
 WEB_SEARCH_QUERY_MAX_CHARS = 500

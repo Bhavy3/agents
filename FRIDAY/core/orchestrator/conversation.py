@@ -19,12 +19,14 @@ from core.personality.presence_timing import PresenceTimingEngine
 from core.router.rules import FAST_CHAT_SOURCE, Intent, IntentName
 from core.workflows.prompt_planner import PromptPlanner
 from core.orchestrator.response_gate import ResponseReadinessGate
-from core.memory.memory_index import MemoryIndex
-from core.memory.memory_validator import MemoryValidator
 from core.router.complexity_detector import detect_query_complexity
 from core.cognition.cognitive_state import CognitiveStateEngine, TurnState
-from core.orchestrator.web_search import (
+from core.orchestrator.memory_context import (
     MEMORY_CONTEXT_MAX_CHARS,
+    MEMORY_QUERY_TIMEOUT_SECONDS,
+    MemoryContextMixin,
+)
+from core.orchestrator.web_search import (
     PendingWebSearch,
     WEB_ANSWER_NOT_FOUND,
     WEB_SEARCH_ACK_DELAY_SECONDS,
@@ -37,7 +39,6 @@ from core.orchestrator.web_search import (
 )
 
 DEGRADED_ROUTER_MESSAGE = "I'm unable to reach the conversation router right now. Please try again."
-MEMORY_QUERY_TIMEOUT_SECONDS = 0.2
 _EXPLICIT_MEMORY_REQUEST = re.compile(
     r"^\s*(?:remember\s+(?:that|this|my|our)\s+|remember\s*:\s*|don't\s+forget\s+(?:that\s+)?|do\s+not\s+forget\s+(?:that\s+)?|save\s+this\s*:\s*)(.+?)\s*$",
     re.IGNORECASE,
@@ -60,7 +61,7 @@ _WORKFLOW_REQUEST = re.compile(
 )
 
 
-class OrchestratorWorker(BaseWorker, WebSearchMixin):
+class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin):
     """Coordinates conversation turns, routing, and interruptions."""
 
     def __init__(
@@ -105,13 +106,10 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin):
         
         self._state_lock = asyncio.Lock()
         self.active_turn_id: str | None = None
-        self._latest_memory_context = ""
-        self._pending_memory_queries: dict[str, asyncio.Future[list[dict[str, str]]]] = {}
         self._pending_web_searches: dict[str, PendingWebSearch] = {}
         self._web_search_ack_tasks: dict[str, asyncio.Task[None]] = {}
         self._turn_ids_by_correlation_id: dict[str, str] = {}
-        self._memory_index = MemoryIndex()
-        self._memory_validator = MemoryValidator()
+        self._init_memory_context()
         self.current_mode = PersonaMode.ENGINEERING
         self.current_style = StyleConfig(tone="focused", verbosity="concise", pacing="normal")
         self.active_speaker: str | None = None
@@ -209,71 +207,9 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin):
 
 
 
-    async def _handle_memory_query_result(self, event: Event) -> None:
-        future = self._pending_memory_queries.get(event.correlation_id or "")
-        if future is not None and not future.done():
-            results = event.payload.get("results", [])
-            future.set_result(results if isinstance(results, list) else [])
 
-    async def _handle_memory_failure(self, event: Event) -> None:
-        if event.payload.get("operation") != "query":
-            return
-        future = self._pending_memory_queries.get(event.correlation_id or "")
-        if future is not None and not future.done():
-            future.set_result([])
 
-    async def _request_memory_context(self, query: str) -> str:
-        query_id = str(uuid.uuid4())
-        future: asyncio.Future[list[dict[str, str]]] = asyncio.get_running_loop().create_future()
-        self._pending_memory_queries[query_id] = future
-        try:
-            await self.event_bus.publish(Event.create(
-                EventType.MEMORY_QUERY_REQUEST,
-                {"query": query[:500], "limit": 10},
-                self.name,
-                query_id,
-            ))
-            results = await asyncio.wait_for(future, timeout=MEMORY_QUERY_TIMEOUT_SECONDS)
-        except asyncio.TimeoutError:
-            self.logger.warning("memory_context_query_timed_out")
-            return ""
-        except Exception:
-            self.logger.exception("memory_context_query_failed")
-            return ""
-        finally:
-            self._pending_memory_queries.pop(query_id, None)
-            if not future.done():
-                future.cancel()
 
-        lines: list[str] = []
-        context_length = 0
-        for result in results:
-            if not isinstance(result, dict):
-                continue
-            content = result.get("content", "")
-            if not isinstance(content, str):
-                continue
-            content = " ".join(content.split())
-            if (
-                not self._memory_validator.validate_content(content).allowed
-                or not self._memory_index.text_is_relevant(query, content)
-            ):
-                continue
-            line = f"- {content}"
-            added_length = len(line) + (1 if lines else 0)
-            if context_length + added_length > MEMORY_CONTEXT_MAX_CHARS:
-                continue
-            lines.append(line)
-            context_length += added_length
-        return "\n".join(lines)
-
-    async def _handle_memory_context(self, event: Event) -> None:
-        async with self._state_lock:
-            context_str = event.payload.get("context", "")
-            # Cap at 500 chars per requirements
-            if len(context_str) > 500:
-                context_str = context_str[:497] + "..."
-            self._latest_memory_context = context_str
 
     async def _handle_speech_started(self, event: Event) -> bool:
         """User started speaking; return whether a new turn may be started."""

@@ -44,6 +44,55 @@ async def test_normal_orchestrator_shutdown_does_not_log_timeout_cancellation(ca
 
 
 @pytest.mark.asyncio
+async def test_text_prompts_arriving_during_a_turn_are_queued_not_dropped():
+    from core.router.rules import Intent, IntentName
+
+    bus = EventBus()
+    await bus.start()
+    router = AsyncMock()
+    router.route.side_effect = lambda text, **_: Intent(
+        IntentName.CHAT,
+        1.0,
+        {"response_text": f"Reply to {text}"},
+        source="test",
+    )
+    class StreamingWorkerStub:
+        def cancel_all(self):
+            return None
+
+    orchestrator = OrchestratorWorker(bus, router, StreamingWorkerStub())
+    completed = []
+
+    async def capture(event):
+        if event.event_type == EventType.RESPONSE_READY:
+            completed.append(event)
+
+    bus.subscribe(EventType.RESPONSE_READY, capture)
+    task = asyncio.create_task(orchestrator.run())
+    await asyncio.sleep(0)
+    prompts = [(f"text-turn-{index}", f"prompt {index}") for index in range(3)]
+
+    for correlation_id, text in prompts:
+        await bus.publish(Event.create(
+            EventType.USER_TEXT_RECEIVED,
+            {"text": text},
+            "test_cli",
+            correlation_id,
+        ))
+        await asyncio.sleep(0.03)
+
+    await _wait_until(lambda: len(completed) == 3)
+    assert [event.correlation_id for event in completed] == [item[0] for item in prompts]
+    assert [event.payload["text"] for event in completed] == [
+        f"Reply to {text}" for _, text in prompts
+    ]
+
+    await orchestrator.stop()
+    await task
+    await bus.stop()
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_turn_ownership():
     from core.router.rules import Intent, IntentName
     

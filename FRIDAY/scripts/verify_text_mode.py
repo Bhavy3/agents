@@ -88,6 +88,11 @@ def health_check(base_url: str, timeout: float = 3.0) -> dict[str, Any]:
         return {"url": url, "error": repr(exc)}
 
 
+def events_for_correlation(events: list[dict[str, Any]], correlation_id: str) -> list[dict[str, Any]]:
+    """Keep evidence scoped to the prompt turn that produced it."""
+    return [item for item in events if item.get("correlation_id") == correlation_id]
+
+
 def prepare_memory_copy(audit_dir: Path) -> Path:
     audit_dir.mkdir(parents=True, exist_ok=True)
     target = audit_dir / "friday_memory_audit_copy.db"
@@ -270,18 +275,17 @@ async def run_live(audit_dir: Path, ledger: EvidenceLedger, *, idle_seconds: int
         while time.monotonic() < deadline:
             await asyncio.sleep(0.1)
             batch = captured[before:]
-            related = [item for item in batch if item["correlation_id"] == correlation_id]
+            related = events_for_correlation(batch, correlation_id)
             if any(item["event"] == "ASSISTANT_RESPONSE_COMPLETED" for item in related):
                 break
-            # Workflow completion events currently omit the original prompt's correlation id.
-            if any(item["event"] in {"ACTION_GRAPH_COMPLETED", "ACTION_GRAPH_FAILED"} for item in batch):
+            if any(item["event"] in {"ACTION_GRAPH_COMPLETED", "ACTION_GRAPH_FAILED"} for item in related):
                 break
             if any(item["event"] == "RESPONSE_READY" for item in related):
                 # Let queued completion / workflow events arrive before snapshot.
                 await asyncio.sleep(0.5)
                 break
         batch = captured[before:]
-        related = batch
+        related = events_for_correlation(batch, correlation_id)
         stream_times = [item["time"] for item in related if item["event"] == "STREAM_CHUNK"]
         output = {
             "prompt": text,

@@ -1182,4 +1182,4 @@ class OrchestratorWorker(BaseWorker):
                         )
                         
         except asyncio.CancelledError:
-            self.logger.warning("workflow_timeout_monitor_cancelled", exc_info=True)
+            self.logger.info("workflow_timeout_monitor_stopped")

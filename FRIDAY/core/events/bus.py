@@ -57,7 +57,7 @@ class EventBus:
             try:
                 await self._dispatcher_task
             except asyncio.CancelledError:
-                self._logger.warning("event_bus_dispatch_cancelled", exc_info=True)
+                self._logger.info("event_bus_dispatch_stopped")
         self._logger.info("event_bus_stopped")
 
     def subscribe(self, event_type: EventType, handler: EventHandler) -> None:

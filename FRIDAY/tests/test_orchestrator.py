@@ -97,6 +97,58 @@ async def test_text_prompts_arriving_during_a_turn_are_queued_not_dropped():
 
 
 @pytest.mark.asyncio
+async def test_queued_text_resumes_after_workflow_terminal_event():
+    bus = EventBus()
+    await bus.start()
+
+    class StreamingWorkerStub:
+        def cancel_all(self):
+            return None
+
+    orchestrator = OrchestratorWorker(bus, None, StreamingWorkerStub())
+    starts = []
+    responses = []
+
+    async def capture_start(event):
+        starts.append(event)
+
+    async def capture_response(event):
+        if event.event_type == EventType.RESPONSE_READY:
+            responses.append(event)
+
+    bus.subscribe(EventType.CONVERSATION_TURN_STARTED, capture_start)
+    bus.subscribe(EventType.RESPONSE_READY, capture_response)
+    task = asyncio.create_task(orchestrator.run())
+    await asyncio.sleep(0)
+
+    orchestrator.active_turn_id = "active-workflow-turn"
+    orchestrator.active_speaker = "assistant"
+    orchestrator._turn_ids_by_correlation_id["workflow-origin"] = "active-workflow-turn"
+    orchestrator._pending_workflow_correlations.add("workflow-origin")
+    await bus.publish(Event.create(
+        EventType.USER_TEXT_RECEIVED,
+        {"text": "queued follow-up"},
+        "test_cli",
+        "queued-follow-up",
+    ))
+    await asyncio.sleep(0.05)
+    assert not any(event.correlation_id == "queued-follow-up" for event in starts)
+
+    await bus.publish(Event.create(
+        EventType.ACTION_GRAPH_COMPLETED,
+        {"graph_id": "active-workflow", "success": True},
+        "workflow_test",
+        "workflow-origin",
+    ))
+    await _wait_until(lambda: any(event.correlation_id == "queued-follow-up" for event in responses))
+
+    assert [event.correlation_id for event in starts] == ["queued-follow-up"]
+    await orchestrator.stop()
+    await task
+    await bus.stop()
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_turn_ownership():
     from core.router.rules import Intent, IntentName
     

@@ -93,6 +93,17 @@ def test_tone_context_string():
         assert any(word in ctx.lower() for word in [tone, "direct", "measured", "inquisitive", "supportive"])
 
 
+@pytest.mark.parametrize(
+    ("tone", "expected_phrase"),
+    [("neutral", "neutral"), ("factual", "evidence-focused")],
+)
+def test_tone_context_supports_neutral_and_factual_delivery(tone, expected_phrase):
+    engine = CognitiveStateEngine(MagicMock())
+    engine.current_tone = tone
+
+    assert expected_phrase in engine.get_tone_context().lower()
+
+
 def test_system_prompt_modulation():
     engine = CognitiveStateEngine(MagicMock())
     engine.current_tone = "confident"

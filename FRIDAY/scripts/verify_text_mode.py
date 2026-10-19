@@ -93,6 +93,16 @@ def events_for_correlation(events: list[dict[str, Any]], correlation_id: str) ->
     return [item for item in events if item.get("correlation_id") == correlation_id]
 
 
+def completion_outcome(events: list[dict[str, Any]]) -> str:
+    """Classify chat and workflow terminal events consistently."""
+    event_types = {item.get("event") for item in events}
+    if "ACTION_GRAPH_FAILED" in event_types:
+        return "workflow_failed"
+    if "ACTION_GRAPH_COMPLETED" in event_types or "ASSISTANT_RESPONSE_COMPLETED" in event_types:
+        return "completed"
+    return "no_completion_event"
+
+
 def prepare_memory_copy(audit_dir: Path) -> Path:
     audit_dir.mkdir(parents=True, exist_ok=True)
     target = audit_dir / "friday_memory_audit_copy.db"
@@ -293,14 +303,10 @@ async def run_live(audit_dir: Path, ledger: EvidenceLedger, *, idle_seconds: int
             "time_to_first_stream_chunk_seconds": round(stream_times[0] - start, 3) if stream_times else None,
             "correlation_id": correlation_id,
             "exact_model_prompts": [item["prompt"] for item in captured_prompts[prompt_before:]],
-            "outcome": (
-                "workflow_failed" if any(item["event"] == "ACTION_GRAPH_FAILED" for item in related)
-                else "completed" if any(item["event"] == "ASSISTANT_RESPONSE_COMPLETED" for item in related)
-                else "no_completion_event"
-            ),
+            "outcome": completion_outcome(related),
             "events": related,
         }
-        ledger.record(name, "live-real-app", output, 0 if output["outcome"] != "no_completion_event" else 1)
+        ledger.record(name, "live-real-app", output, 0 if output["outcome"] == "completed" else 1)
 
     try:
         web_prompts = [

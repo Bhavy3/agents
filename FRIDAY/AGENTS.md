@@ -10,7 +10,7 @@ Do not assume any Omega is unbuilt. "NOT BUILT" is allowed only if a grep over c
 Never write "should", "appears", or "expected" in place of output.
 
 PART 0: SPEC FIRST
-Search AGENTS.md, docs/, FRIDAY_MASTER_LOOP_PROMPT.md, INSTALL_PLAN.md and any file containing "Omega" or "Ω". For each of the 10 objectives, quote its written definition and acceptance criteria. If an objective has no written spec, say so and use this fallback, labelled as a guess:
+Search AGENTS.md, docs/, docs/FRIDAY_MASTER_LOOP_PROMPT.md, docs/INSTALL_PLAN.md and any file containing "Omega" or "Ω". For each of the 10 objectives, quote its written definition and acceptance criteria. If an objective has no written spec, say so and use this fallback, labelled as a guess:
   Ω.1 Realtime Presence: always-listening, instant-feeling interaction
   Ω.2 Latency: fast time to first token and total response
   Ω.3 VAD interruption: user can interrupt speech reliably without early cut-off

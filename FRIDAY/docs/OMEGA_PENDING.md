@@ -46,7 +46,7 @@ human-experience behavior.
 8. **Omega 8 - Unified device ecosystem: PARTIAL / SCOPE BLOCKED**
    - Existing local audio, vision, desktop, filesystem, browser, API, and safety modules exist.
    - Calendar, email, WhatsApp, mobile, cloud-drive, notification, and IDE integrations are not implemented or verified.
-   - The current `rule_book.md` prohibits expanding those integration families without an explicit phase decision.
+   - The current `docs/rule_book.md` prohibits expanding those integration families without an explicit phase decision.
 
 9. **Omega 9 - Adaptive intelligence routing: IMPROVED / PARTIAL**
    - The streaming worker now owns the logical selected model and routing reason for the next stream.

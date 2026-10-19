@@ -85,6 +85,22 @@ async def test_route_reports_active_fallback_when_model_switch_fails(caplog):
 
 
 @pytest.mark.asyncio
+async def test_route_without_manager_logs_selection_not_model_execution(caplog):
+    """A logical route choice alone does not prove the backend changed models."""
+    import logging
+
+    caplog.set_level(logging.INFO, logger="core.router.adaptive_router")
+    router = AdaptiveRouter()
+
+    model, reason = await router.route("analyze the trends")
+
+    assert model == "7b"
+    assert reason == "complex_query_needs_7b"
+    assert "routing_selected: model=7b" in caplog.text
+    assert "routing_executed:" not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_fallback_on_timeout():
     """When 3B inference times out, automatically escalates to 7B and retries."""
     mock_client = MagicMock()

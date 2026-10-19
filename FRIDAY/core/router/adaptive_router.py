@@ -42,7 +42,7 @@ class AdaptiveRouter:
                 return ("3b", "complex_query_urgent_use_3b_fast")
 
     async def route(self, utterance: str) -> Tuple[str, str]:
-        """Execute routing decision."""
+        """Select a model and activate it when a model manager is available."""
         target_model, reason = await self.decide_model(utterance)
         active_model = target_model
 
@@ -52,5 +52,8 @@ class AdaptiveRouter:
                 active_model = self.model_manager.current_model
                 reason = f"{reason}; switch_failed_fallback_{active_model}"
 
-        logger.info(f"routing_executed: model={active_model}, reason={reason}")
+        if self.model_manager is None:
+            logger.info(f"routing_selected: model={active_model}, reason={reason}")
+        else:
+            logger.info(f"routing_executed: model={active_model}, reason={reason}")
         return active_model, reason

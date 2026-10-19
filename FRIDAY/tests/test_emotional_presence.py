@@ -44,6 +44,13 @@ def test_tone_detector_factual_instruction():
     assert detect_tone("Give the exact date and numeric measurements only.") == "factual"
 
 
+def test_previous_warm_turn_does_not_override_current_neutral_or_factual_tone():
+    history = ["I feel discouraged and could use encouragement."]
+
+    assert detect_tone("Please explain how a database index works.", history=history) == "neutral"
+    assert detect_tone("Give the exact date and numeric measurements only.", history=history) == "factual"
+
+
 @pytest.mark.asyncio
 async def test_emotional_tone_changes_delivery_prompt_only():
     bus = EventBus()

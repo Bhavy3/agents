@@ -8,8 +8,6 @@ def detect_tone(utterance: str, history: Optional[list[str]] = None, default: st
     # supported for compatibility; explicit self-reports provide stronger cues.
 
     utterance_lower = utterance.lower()
-    history_lower = " ".join(history or []).lower()
-    combined = utterance_lower + " " + history_lower
 
     confidence_keywords = {
         "can you", "help", "do this", "execute", "build", "fix",
@@ -40,7 +38,7 @@ def detect_tone(utterance: str, history: Optional[list[str]] = None, default: st
     confidence_score = sum(1 for kw in confidence_keywords if kw in utterance_lower)
     caution_score = sum(1 for kw in caution_keywords if kw in utterance_lower)
     curiosity_score = sum(1 for kw in curiosity_keywords if kw in utterance_lower)
-    warmth_score = sum(1 for kw in warmth_keywords if kw in combined)
+    warmth_score = sum(1 for kw in warmth_keywords if kw in utterance_lower)
     factual_score = sum(1 for kw in factual_keywords if kw in utterance_lower)
     neutral_score = sum(1 for kw in neutral_keywords if kw in utterance_lower)
 

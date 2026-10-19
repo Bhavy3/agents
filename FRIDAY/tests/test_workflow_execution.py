@@ -8,6 +8,7 @@ from core.workflows.workflow_engine import WorkflowEngine, MAX_STEP_OUTPUT_CHARS
 from core.workflows.workflow_worker import WorkflowWorker
 from core.workflows.recovery import WorkflowRecovery
 from core.workflows.state import WorkflowStatus, WorkflowGoal, WorkflowStep
+from core.workflows.store import WorkflowStore
 from core.tools.tool_worker import ToolWorker
 
 
@@ -47,6 +48,54 @@ async def test_tool_chaining_with_bounded_output():
     assert len(content) == MAX_STEP_OUTPUT_CHARS
     assert len(content) <= 1500
 
+    await bus.stop()
+
+
+@pytest.mark.asyncio
+async def test_workflow_terminal_events_keep_originating_correlation_id():
+    bus = EventBus()
+    await bus.start()
+    engine = WorkflowEngine(bus)
+    terminal_events = []
+
+    async def capture(event):
+        terminal_events.append(event)
+
+    bus.subscribe(EventType.ACTION_GRAPH_COMPLETED, capture)
+    bus.subscribe(EventType.RESPONSE_READY, capture)
+    workflow_id = await engine.create_workflow(
+        "No-op workflow completion probe",
+        [],
+        correlation_id="source-turn-42",
+    )
+
+    await engine.start_workflow(workflow_id)
+    await bus.drain()
+
+    assert {event.event_type for event in terminal_events} == {
+        EventType.ACTION_GRAPH_COMPLETED,
+        EventType.RESPONSE_READY,
+    }
+    assert {event.correlation_id for event in terminal_events} == {"source-turn-42"}
+    await bus.stop()
+
+
+@pytest.mark.asyncio
+async def test_workflow_request_correlation_is_preserved_by_worker(tmp_path):
+    bus = EventBus()
+    await bus.start()
+    worker = WorkflowWorker(bus, store=WorkflowStore(str(tmp_path / "active_workflows.json")))
+    request = Event.create(
+        EventType.ACTION_GRAPH_STARTED,
+        {"goal": "correlation probe", "steps": [{"intent": "search_web", "parameters": {"query": "x"}}]},
+        "test",
+        "source-turn-43",
+    )
+
+    await worker.handle_workflow_request(request)
+    workflow = next(iter(worker.engine.active_workflows.values()))
+    assert workflow.goal == "correlation probe"
+    assert workflow.correlation_id == "source-turn-43"
     await bus.stop()
 
 

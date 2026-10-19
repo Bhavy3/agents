@@ -16,6 +16,21 @@ async def _worker_for(tmp_path, workflow: WorkflowGoal):
     return bus, worker
 
 
+def test_workflow_origin_correlation_survives_persistence(tmp_path):
+    workflow = WorkflowGoal(
+        id="corr0001",
+        goal="Keep the originating turn",
+        steps=[WorkflowStep("corr0001_0", "search_web", {"query": "x"})],
+        correlation_id="source-turn-44",
+    )
+    store = WorkflowStore(str(tmp_path / "active_workflows.json"))
+
+    store.save_workflows({workflow.id: workflow})
+    loaded = store.load_workflows()[workflow.id]
+
+    assert loaded.correlation_id == "source-turn-44"
+
+
 @pytest.mark.asyncio
 async def test_persisted_running_workflow_resumes_pending_step(tmp_path):
     workflow = WorkflowGoal(

@@ -478,6 +478,20 @@ async def test_personal_typo_recall_uses_saved_favorite_without_search(tmp_path)
 
 
 @pytest.mark.asyncio
+async def test_related_saved_code_recall_uses_memory_without_web_search(tmp_path):
+    responses, actions, router = await _run_memory_routing_case(
+        tmp_path,
+        "What was the audit color code?",
+        "The audit color code is cobalt 4317.",
+    )
+
+    assert len(responses) == 1
+    assert "cobalt 4317" in responses[0].payload["text"]
+    assert actions == []
+    router.route.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_non_personal_web_search_still_routes_to_search(tmp_path):
     query = "search the web for BMW M8 top speed"
 

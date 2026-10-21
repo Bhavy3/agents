@@ -51,17 +51,18 @@ async def test_fast_chat_streams_once_with_safe_chat_prompt_and_is_observable():
     bus.subscribe(EventType.RESPONSE_READY, collect_response)
 
     try:
-        await orchestrator._initiate_turn("What is 2 + 2?", "fast-correlation")
+        await orchestrator._initiate_turn("What is 2 + 2?", "fast-correlation", typed_input=True)
         assert orchestrator._routing_task is not None
         await orchestrator._routing_task
         await bus.drain()
 
-        router.route.assert_awaited_once()
+        router.route.assert_not_awaited()
+        orchestrator._request_memory_context.assert_not_awaited()
         orchestrator.response_gate.wait_for_readiness.assert_not_awaited()
         stream.stream_reasoning.assert_awaited_once()
         prompt = stream.stream_reasoning.await_args.args[0]
         assert "Memory capability:" in prompt
-        assert "System Memory/Context:" in prompt
+        assert "System Memory/Context:" not in prompt
         assert "User: What is 2 + 2?" in prompt
         assert [event.payload["text"] for event in responses] == ["Four."]
     finally:

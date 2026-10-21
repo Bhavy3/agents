@@ -81,6 +81,31 @@ async def test_emotional_tone_changes_delivery_prompt_only():
 
 
 @pytest.mark.asyncio
+async def test_tone_context_is_snapshotted_for_delayed_turn():
+    bus = EventBus()
+    await bus.start()
+    router = AsyncMock()
+    router.route.return_value = Intent(IntentName.CHAT, 1.0, {"response_text": "answer"}, source="unit_test")
+    engine = CognitiveStateEngine(bus)
+    orchestrator = OrchestratorWorker(bus, router, MagicMock(), cognitive_state=engine)
+    orchestrator.active_turn_id = "turn-tone-snapshot"
+    orchestrator.response_gate.wait_for_readiness = AsyncMock(return_value=True)
+    orchestrator._request_memory_context = AsyncMock(return_value="")
+    orchestrator.injector.get_style_instructions = MagicMock(return_value="base personality")
+
+    warm_context = "You are supportive, friendly, and compassionate. Show empathy and care."
+    await orchestrator._route_and_execute(
+        "Explain this",
+        "turn-tone-snapshot",
+        "corr-tone-snapshot",
+        tone_context=warm_context,
+    )
+
+    assert warm_context in router.route.await_args.kwargs["chat_instructions"]
+    await bus.stop()
+
+
+@pytest.mark.asyncio
 async def test_tone_shift_logged(caplog):
     engine = CognitiveStateEngine(MagicMock())
     engine.current_tone = "confident"

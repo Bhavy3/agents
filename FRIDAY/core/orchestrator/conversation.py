@@ -15,7 +15,7 @@ from core.personality.prompt_personality import PersonalityPromptInjector
 from core.personality.models import PersonaMode, StyleConfig
 from core.personality.presence import PresenceManager
 from core.personality.presence_timing import PresenceTimingEngine
-from core.router.rules import FAST_CHAT_SOURCE, Intent, IntentName
+from core.router.rules import FAST_CHAT_SOURCE, Intent, IntentName, fast_chat_intent
 from core.workflows.prompt_planner import PromptPlanner
 from core.orchestrator.response_gate import ResponseReadinessGate
 from core.router.complexity_detector import detect_query_complexity
@@ -173,7 +173,7 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
                 return
             text, correlation_id = self._queued_cli_turns.popleft()
             self._turn_start_pending = True
-        asyncio.create_task(self._initiate_turn(text, correlation_id))
+        asyncio.create_task(self._initiate_turn(text, correlation_id, typed_input=True))
 
 
 
@@ -320,6 +320,7 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
         correlation_id: str | None,
         *,
         voice_input: bool = False,
+        typed_input: bool = False,
     ) -> None:
         correlation_id = correlation_id or str(uuid.uuid4())
         self._last_activity_time = time.perf_counter()
@@ -384,6 +385,9 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
         # Tone modulation: update tone before querying LLM
         recent_turns = [turn["content"] for turn in self.context[:-1]]
         await self.cognitive_state.update_tone(text, history=recent_turns)
+        # Snapshot delivery context for this turn.  Routing is scheduled below
+        # and may overlap a later turn that changes the shared cognitive tone.
+        tone_context = self.cognitive_state.get_tone_context()
 
         selected_model, selection_reason = await self.adaptive_router.route(text)
         selector = getattr(self.streaming_worker, "set_model", None)
@@ -407,6 +411,8 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
                         turn_id,
                         correlation_id,
                         voice_input=voice_input,
+                        typed_input=typed_input,
+                        tone_context=tone_context,
                     )
                 )
 
@@ -439,6 +445,8 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
         correlation_id: str | None,
         *,
         voice_input: bool = False,
+        typed_input: bool = False,
+        tone_context: str | None = None,
     ) -> None:
         start_time = time.perf_counter()
         deferred_web_search: str | None = None
@@ -472,14 +480,19 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
                 ))
                 return
 
+            fast_intent = fast_chat_intent(text) if typed_input else None
+
             # Generate personality instructions
             base_instructions = self.injector.get_style_instructions(self.current_style, self.current_mode)
-            tone_ctx = self.cognitive_state.get_tone_context()
+            tone_ctx = tone_context if tone_context is not None else self.cognitive_state.get_tone_context()
             if tone_ctx:
                 delivery_instructions = f"{tone_ctx}\n\n{base_instructions}"
             else:
                 delivery_instructions = base_instructions
-            mem_ctx = await self._request_memory_context(text)
+            # General chat has no explicit memory or action signal. Avoid a
+            # serialized memory round-trip on this latency-sensitive path;
+            # memory-bearing and dynamic requests retain the normal lookup.
+            mem_ctx = "" if fast_intent is not None else await self._request_memory_context(text)
                 
             # Emotional context may shape the answer, but must not steer the
             # intent classifier's choice of tools or actions.
@@ -492,7 +505,9 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
                 (line.removeprefix("- ").strip() for line in mem_ctx.splitlines() if line.strip()),
                 "",
             )
-            if is_personal_memory_query(text) and personal_memory:
+            if fast_intent is not None:
+                intent = fast_intent
+            elif is_personal_memory_query(text) and personal_memory:
                 intent = Intent(
                     IntentName.CHAT,
                     1.0,
@@ -502,7 +517,7 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
             else:
                 intent = None
 
-            if await self._try_start_workflow(text, turn_id, correlation_id, start_time):
+            if intent is None and await self._try_start_workflow(text, turn_id, correlation_id, start_time):
                 return
 
             # Otherwise, proceed with simple routing. If memory had no relevant

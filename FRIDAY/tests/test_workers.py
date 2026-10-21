@@ -257,7 +257,9 @@ class WorkerTests(unittest.TestCase):
                 supervisor = WorkerSupervisor(bus, [worker], max_restarts_per_minute=2)
                 await bus.start()
                 await supervisor.start()
-                await asyncio.sleep(0.08)
+                deadline = asyncio.get_running_loop().time() + 1.0
+                while worker.health.state.value != "quarantined" and asyncio.get_running_loop().time() < deadline:
+                    await asyncio.sleep(0.01)
                 state = worker.health.state.value
                 restart_count = worker.health.restart_count
                 generation = supervisor.current_worker_task_generation(worker.name)

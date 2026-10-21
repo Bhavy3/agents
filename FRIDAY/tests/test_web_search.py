@@ -390,3 +390,46 @@ async def test_interruption_discards_late_web_search_results():
         await orchestrator.stop()
         await orchestrator_task
         await bus.stop()
+
+
+@pytest.mark.asyncio
+async def test_successful_web_search_releases_turn_for_next_typed_prompt():
+    bus = EventBus()
+    await bus.start()
+    streaming_worker = SimpleNamespace(
+        generate_buffered=AsyncMock(return_value="Paris is the capital of France."),
+        stream_reasoning=AsyncMock(),
+        cancel_all=lambda: None,
+    )
+    orchestrator = OrchestratorWorker(bus, None, streaming_worker)
+    orchestrator.active_turn_id = "active-turn"
+    orchestrator.active_speaker = "assistant"
+    correlation_id = "search-success-correlation"
+    orchestrator._pending_web_searches[correlation_id] = PendingWebSearch(
+        query="capital of France",
+        user_text="What is the capital of France?",
+        turn_id="active-turn",
+        personality_instructions="personality",
+        memory_context="",
+    )
+    responses: list[Event] = []
+
+    async def capture(event: Event) -> None:
+        if event.event_type == EventType.RESPONSE_READY:
+            responses.append(event)
+
+    bus.subscribe(EventType.RESPONSE_READY, capture)
+    try:
+        await orchestrator._generate_web_search_answer(
+            correlation_id,
+            orchestrator._pending_web_searches[correlation_id],
+            "1. Capital of France\nThe capital of France is Paris.",
+        )
+        await bus.drain()
+
+        assert orchestrator.active_turn_id is None
+        assert correlation_id not in orchestrator._pending_web_searches
+        assert responses[-1].payload["text"] == "Paris is the capital of France."
+    finally:
+        await orchestrator.stop()
+        await bus.stop()

@@ -292,6 +292,17 @@ class WebSearchMixin:
                 self.name,
                 correlation_id,
             ))
+            async with self._state_lock:
+                self._pending_web_searches.pop(correlation_id, None)
+                if self.active_turn_id == pending.turn_id:
+                    self.active_turn_id = None
+                    self.active_speaker = None
+                    self._routing_task = None
+                    turn_released = True
+                else:
+                    turn_released = False
+            if turn_released:
+                await self._start_next_cli_turn()
         except asyncio.CancelledError:
             raise
         except Exception:

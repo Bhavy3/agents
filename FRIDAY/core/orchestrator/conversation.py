@@ -575,7 +575,7 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
                 # classify it and then asking the same LLM to answer it.
                 if intent.source == FAST_CHAT_SOURCE:
                     response_text = await self.streaming_worker.stream_reasoning(
-                        self._build_chat_prompt(text, self.context, chat_instructions),
+                        self._build_fast_chat_prompt(text, tone_ctx),
                         correlation_id,
                     )
                 else:
@@ -675,6 +675,16 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
         else:
             context_str += f"User: {text}\nResponse:"
         return context_str.strip()
+
+    @staticmethod
+    def _build_fast_chat_prompt(text: str, tone_context: str | None) -> str:
+        """Build a compact typed-chat prompt to reduce first-token latency."""
+        tone = f"{tone_context}\n\n" if tone_context else ""
+        return (
+            f"{tone}Answer accurately and concisely. Do not claim to remember information "
+            "unless the user explicitly asks you to remember it.\n"
+            f"User: {text}\nResponse:"
+        ).strip()
 
     async def _publish_direct_response(
         self,

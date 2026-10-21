@@ -12,7 +12,7 @@ _FAST_CHAT_GREETING_RE = re.compile(
     re.IGNORECASE,
 )
 _FAST_CHAT_GENERAL_QUESTION_RE = re.compile(
-    r"^(?:what is|what are|why is|why are|how does|how do|"
+    r"^(?:what is|what are|why is|why are|why does|why do|how does|how do|"
     r"can you explain|explain|define|describe|give (?:me )?(?:an )?"
     r"(?:overview|explanation|introduction) of|what do you think)\b",
     re.IGNORECASE,

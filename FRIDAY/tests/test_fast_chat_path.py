@@ -26,6 +26,11 @@ async def test_clear_chat_uses_local_fast_path_and_ambiguous_text_keeps_classifi
     assert ambiguous_intent.source == "ollama_reasoning"
     fallback.route.assert_awaited_once()
 
+    why_intent = await router.route("Why do leaves change color?")
+    assert why_intent.name is IntentName.CHAT
+    assert why_intent.source == FAST_CHAT_SOURCE
+    fallback.route.assert_awaited_once()
+
 
 @pytest.mark.asyncio
 async def test_fast_chat_streams_once_with_safe_chat_prompt_and_is_observable():
@@ -61,7 +66,8 @@ async def test_fast_chat_streams_once_with_safe_chat_prompt_and_is_observable():
         orchestrator.response_gate.wait_for_readiness.assert_not_awaited()
         stream.stream_reasoning.assert_awaited_once()
         prompt = stream.stream_reasoning.await_args.args[0]
-        assert "Memory capability:" in prompt
+        assert "Answer accurately and concisely." in prompt
+        assert "Do not claim to remember information" in prompt
         assert "System Memory/Context:" not in prompt
         assert "User: What is 2 + 2?" in prompt
         assert [event.payload["text"] for event in responses] == ["Four."]

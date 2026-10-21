@@ -85,6 +85,24 @@ async def test_route_reports_active_fallback_when_model_switch_fails(caplog):
 
 
 @pytest.mark.asyncio
+async def test_route_does_not_report_target_when_switch_result_is_not_applied(caplog):
+    """The backend's active model, rather than a switch return value, is authoritative."""
+    import logging
+
+    caplog.set_level(logging.INFO, logger="core.router.adaptive_router")
+    mock_mm = MagicMock()
+    mock_mm.current_model = "3b"
+    mock_mm.switch_model = AsyncMock(return_value=True)
+    router = AdaptiveRouter(model_manager=mock_mm)
+
+    model, reason = await router.route("analyze the trends")
+
+    assert model == "3b"
+    assert reason == "complex_query_needs_7b; switch_failed_fallback_3b"
+    assert "routing_executed: model=3b" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_route_without_manager_logs_selection_not_model_execution(caplog):
     """A logical route choice alone does not prove the backend changed models."""
     import logging

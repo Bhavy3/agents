@@ -47,9 +47,12 @@ class AdaptiveRouter:
         active_model = target_model
 
         if self.model_manager and target_model != self.model_manager.current_model:
-            switched = await self.model_manager.switch_model(target_model, reason)
-            if switched is False:
-                active_model = self.model_manager.current_model
+            await self.model_manager.switch_model(target_model, reason)
+            # The manager's reported active model is the source of truth.  A
+            # truthy/implicit switch result alone does not prove that the
+            # single backend server is now serving the selected model.
+            active_model = self.model_manager.current_model
+            if active_model != target_model:
                 reason = f"{reason}; switch_failed_fallback_{active_model}"
 
         if self.model_manager is None:

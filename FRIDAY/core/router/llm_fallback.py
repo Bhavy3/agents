@@ -6,6 +6,7 @@ logger = logging.getLogger(__name__)
 import json
 import re
 import asyncio
+from typing import Any
 
 from core.events.bus import EventBus
 from core.events.event_types import EventType
@@ -17,6 +18,7 @@ from core.memory.explicit_requests import (
     EXPLICIT_MEMORY_REQUEST as _EXPLICIT_MEMORY_REQUEST,
     extract_explicit_memory_content,
 )
+from core.router.adaptive_router import AdaptiveRouter
 from core.router.rules import Intent, IntentName
 
 
@@ -25,7 +27,7 @@ Respond ONLY with a valid JSON object. No explanations outside JSON.
 Available intents: {available_intents}, chat.
 
 If the user is greeting, chatting, or asking a general question with no clear system action (like restarting a worker or checking status), the intent MUST be 'chat', not 'help' or any other tool name.
-If the user asks to search the web, look something up, find current news, or tell them about a factual topic, use 'search_web' with a concise query. Use 'open_url' only when the user explicitly asks to open or launch a website in the browser; do not open a search page as a substitute for searching.
+If the user asks for a simple lookup, use 'search_web' with a concise query. If the user asks to compare products, find popular/best options, recommend what to buy, or research a topic across sources, use 'research_web' with the original question as the query. If the user asks to show/open/read a named section of a specific URL, use 'open_section' with parameters {"url": "...", "section": "..."}. Use 'open_url' only when the user explicitly asks to open or launch a website in the browser.
 
 Examples:
 User Input: hi
@@ -36,6 +38,9 @@ User Input: give in depth knowledge about the jarvis
 
 User Input: search google for latest news
 {"intent": "search_web", "confidence": 0.9, "suggested_action": "", "reasoning_summary": "Web search request.", "parameters": {"query": "latest news"}}
+
+User Input: compare several products and recommend one using evidence
+{"intent": "research_web", "confidence": 0.9, "suggested_action": "", "reasoning_summary": "Multi-source product research.", "parameters": {"query": "compare products and recommend one using evidence", "max_sources": 3}}
 """
 
 
@@ -93,6 +98,19 @@ def _extract_parameters(raw_response: str) -> dict:
             logger.warning("llm_parameter_regex_parse_failed", exc_info=True)
 
     # 4. Otherwise: logger.error("llm_parameters_unrecoverable", extra={"raw_response": raw}, exc_info=initial_error) and return {}.
+    # A small local model often reaches its token limit after emitting the
+    # intent and the beginning of a query. Recover that query value when the
+    # outer JSON is incomplete; the caller still replaces it with the user's
+    # original text when recovery is not trustworthy.
+    query_match = re.search(r'"query"\s*:\s*"((?:\\.|[^"\\])*)', text, re.DOTALL)
+    if query_match:
+        try:
+            recovered = json.loads('"' + query_match.group(1) + '"')
+        except (json.JSONDecodeError, ValueError):
+            recovered = query_match.group(1).rstrip(" ,}]\n\r\t")
+        if recovered.strip():
+            return {"query": recovered}
+
     if initial_error is None:
         initial_error = ValueError("Could not parse parameters as dictionary from LLM response")
     logger.error("llm_parameters_unrecoverable", extra={"raw_response": raw}, exc_info=initial_error)
@@ -107,14 +125,18 @@ class LlmFallbackRouter:
         event_bus: EventBus | None = None,
         streaming_worker: StreamingLlmWorker | None = None,
         valid_tools: list[str] | None = None,
+        model_manager: Any | None = None,
     ) -> None:
         self.ollama = ollama_client or OllamaClient()
         self.history = command_history or CommandHistory()
         self.event_bus = event_bus
         self.streaming_worker = streaming_worker
         self.valid_tools = valid_tools or []
+        self.adaptive_router = AdaptiveRouter(model_manager=model_manager) if model_manager is not None else None
 
     async def route(self, text: str, context: list[dict[str, str]] | None = None, correlation_id: str | None = None, personality_instructions: str = "", chat_instructions: str = "") -> Intent:
+        if self.adaptive_router is not None:
+            await self.adaptive_router.route(text)
         await self._emit(EventType.LLM_REQUEST_SENT, {"model": self.ollama.model, "prompt_preview": text[:100]}, correlation_id)
 
         try:
@@ -159,7 +181,17 @@ class LlmFallbackRouter:
             intent_str = "chat"
             intent_name = IntentName.CHAT
 
-        parameters = _extract_parameters(raw_response)
+        parameters = _extract_parameters(raw_response or "")
+
+        if intent_name in {IntentName.SEARCH_WEB, IntentName.RESEARCH_WEB}:
+            # Never let truncated router JSON erase the user's actual search
+            # request. This also keeps the tool call valid when the model only
+            # emitted intent/confidence before hitting max_tokens.
+            query = parameters.get("query")
+            if not isinstance(query, str) or not query.strip():
+                parameters["query"] = text.strip()
+            if intent_name == IntentName.RESEARCH_WEB:
+                parameters.setdefault("max_sources", 3)
 
         chat_response_text = ""
         if intent_name == IntentName.CHAT:

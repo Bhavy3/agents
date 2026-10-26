@@ -48,6 +48,8 @@ _FAST_CHAT_ACTION_OR_DYNAMIC_RE = re.compile(
 class IntentName(StrEnum):
     OPEN_URL = "open_url"
     SEARCH_WEB = "search_web"
+    RESEARCH_WEB = "research_web"
+    OPEN_SECTION = "open_section"
     LIST_DIR = "list_dir"
     READ_TEXT_FILE = "read_text_file"
     WRITE_TEXT_FILE = "write_text_file"
@@ -105,8 +107,11 @@ def route_by_rules(text: str) -> Intent | None:
     ):
         return Intent(IntentName.GET_TIME, 1.0, {})
 
-    if normalized in {"open google", "open google.com", "launch google", "launch google.com"}:
-        return Intent(IntentName.OPEN_URL, 1.0, {"url": "https://www.google.com"})
+    open_site = re.fullmatch(r"(?:open|launch)\s+([a-z0-9-]+(?:\.[a-z]{2,})?)", normalized)
+    if open_site:
+        site = open_site.group(1)
+        url = f"https://www.{site}.com" if "." not in site else f"https://{site}"
+        return Intent(IntentName.OPEN_URL, 1.0, {"url": url})
 
     if normalized in {"exit", "quit", "shutdown friday", "stop friday"}:
         return Intent(IntentName.EXIT, 1.0, {})
@@ -120,6 +125,30 @@ def route_by_rules(text: str) -> Intent | None:
     if normalized.startswith("open folder"):
         folder = text.strip()[len("open folder") :].strip() or "."
         return Intent(IntentName.LIST_DIR, 0.95, {"path": folder})
+
+    section_match = re.search(
+        r"(?:show|open|read|find|go to).*?(?:section|part)\s+(?:called\s+|named\s+)?(.+?)\s+(https?://\S+)",
+        text.strip(),
+        re.IGNORECASE,
+    ) or re.search(
+        r"(?:show|open|read|find|go to).*?\b(.+?)\s+(?:section|part)\s+(https?://\S+)",
+        text.strip(),
+        re.IGNORECASE,
+    )
+    if section_match:
+        section_name = section_match.group(1).strip()
+        section_name = re.sub(r"^(?:me\s+)?(?:the\s+)?", "", section_name, flags=re.IGNORECASE)
+        return Intent(
+            IntentName.OPEN_SECTION,
+            0.98,
+            {"section": section_name, "url": section_match.group(2).rstrip(".,;!?" )},
+        )
+
+    if re.search(
+        r"\b(?:compare|popular|best|recommend|which one|what should i buy|buy|options|top)\b|तुलना|बेहतर",
+        normalized,
+    ) and re.search(r"\b(?:products?|cards?|gpu|graphics|phones?|laptops?|headphones|camera|monitor)\b|फोन|लैपटॉप", normalized):
+        return Intent(IntentName.RESEARCH_WEB, 0.92, {"query": text.strip(), "max_sources": "3"})
 
     for prefix in ("search the web for ", "search google for ", "search for ", "look up ", "google ", "search "):
         if normalized.startswith(prefix):

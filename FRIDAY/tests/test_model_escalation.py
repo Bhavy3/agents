@@ -9,6 +9,7 @@ from core.events.event_types import EventType
 from core.llm.model_manager import ModelManager
 from core.llm.llm_worker import LlmWorker
 from core.router.complexity_detector import detect_query_complexity
+from core.router.adaptive_router import AdaptiveRouter
 
 
 def _make_launchable(mm: ModelManager) -> None:
@@ -41,6 +42,16 @@ def test_detect_complexity_complex():
     assert detect_query_complexity("build a dashboard") == "complex"
     assert detect_query_complexity("explain quantum computing") == "complex"
     assert detect_query_complexity("code an api") == "complex"
+    assert detect_query_complexity("compare the latest official prices and verify the sources") == "complex"
+
+
+@pytest.mark.asyncio
+async def test_complex_research_prefers_7b_even_when_default_budget_is_short():
+    model, reason = await AdaptiveRouter().decide_model(
+        "Compare the latest official prices, verify sources, and rank the options under my budget."
+    )
+    assert model == "7b"
+    assert reason == "complex_query_needs_7b"
 
 
 @pytest.mark.asyncio
@@ -232,6 +243,51 @@ def test_gpu_layer_default_matches_local_launcher(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_endpoint_manager_switches_client_to_real_7b_endpoint(tmp_path):
+    """A configured 7B endpoint changes the actual client backend, not only its label."""
+    server = tmp_path / "llama-server.exe"
+    model_3b = tmp_path / "qwen2.5-3b.gguf"
+    model_7b = tmp_path / "qwen2.5-7b.gguf"
+    server.touch()
+    model_3b.touch()
+    model_7b.touch()
+
+    client = MagicMock()
+    client.use_backend = AsyncMock()
+    mm = ModelManager(
+        client=client,
+        health_timeout_seconds=0.05,
+        health_poll_interval_seconds=0.01,
+    )
+    mm.server_bin = str(server)
+    mm.model_paths = {"3b": str(model_3b), "7b": str(model_7b)}
+    mm.model_base_urls = {
+        "3b": "http://127.0.0.1:8080",
+        "7b": "http://127.0.0.1:8081",
+    }
+
+    with patch("urllib.request.urlopen", return_value=_health_response(200)):
+        assert await mm.switch_model("7b", "complex_query_needs_7b") is True
+        assert mm.current_model == "7b"
+        client.use_backend.assert_awaited_once_with(
+            "http://127.0.0.1:8081",
+            model="qwen2.5-7b",
+            logical_model="7b",
+            reason="active_7b",
+        )
+
+        client.use_backend.reset_mock()
+        assert await mm.switch_model("3b", "simple_query") is True
+        assert mm.current_model == "3b"
+        client.use_backend.assert_awaited_once_with(
+            "http://127.0.0.1:8080",
+            model="qwen2.5-3b",
+            logical_model="3b",
+            reason="active_3b",
+        )
+
+
+@pytest.mark.asyncio
 async def test_failed_target_rolls_back_and_emits_failure(tmp_path):
     """A target returning non-200 is killed and the prior model is restored."""
     server = tmp_path / "llama-server.exe"
@@ -275,6 +331,8 @@ async def test_failed_target_rolls_back_and_emits_failure(tmp_path):
         old_process.terminate.assert_called_once()
         assert mm.current_model == "3b"
         assert mm.process is rollback_process
+        assert mm.model_ready["7b"] is False
+        assert mm.model_ready["3b"] is True
         await bus.drain()
         assert len(failures) == 1
         assert failures[0].payload["model"] == "7b"
@@ -310,4 +368,5 @@ async def test_healthy_target_is_the_only_successful_switch(tmp_path):
 
     assert mm.current_model == "7b"
     assert mm.process is target_process
+    assert mm.model_ready["7b"] is True
     old_process.terminate.assert_called_once()

@@ -14,6 +14,7 @@ from core.events.models import Event
 from core.tools.tool_worker import ToolWorker
 from core.logging.logger import configure_logging, get_logger, shutdown_logging
 from core.llm.ollama_client import OllamaClient
+from core.llm.model_manager import ModelManager
 from core.llm.stream_aggregator import ResponseAggregator
 from core.llm.streaming_worker import StreamingLlmWorker
 from core.router.llm_fallback import LlmFallbackRouter
@@ -75,11 +76,15 @@ class FridayApp:
             max_retries=self.settings.ollama_max_retries,
             provider=self.settings.llm_provider,
         )
+        self.model_manager = ModelManager(event_bus=self.event_bus, client=self.ollama_client)
         self.stream_aggregator = ResponseAggregator(self.event_bus, metrics=self.metrics)
         self.streaming_worker = StreamingLlmWorker(
-            self.event_bus, self.ollama_client, self.stream_aggregator
+            self.event_bus,
+            self.ollama_client,
+            self.stream_aggregator,
+            model_manager=self.model_manager,
         )
-        self.tool_worker = ToolWorker(self.event_bus, metrics=self.metrics)
+        self.tool_worker = ToolWorker(self.event_bus, metrics=self.metrics, query_client=self.ollama_client)
         valid_tools = self.tool_worker.registry.list_tools()
         self.llm_fallback = LlmFallbackRouter(
             ollama_client=self.ollama_client,
@@ -87,6 +92,7 @@ class FridayApp:
             event_bus=self.event_bus,
             streaming_worker=self.streaming_worker,
             valid_tools=valid_tools,
+            model_manager=self.model_manager,
         )
         self.intent_router = IntentRouter(self.event_bus, llm_fallback=self.llm_fallback)
         self.memory_worker = MemoryWorker(
@@ -119,6 +125,7 @@ class FridayApp:
             response_timeout_seconds=self.settings.ollama_timeout_seconds,
             enable_presence_ack=getattr(self.settings, 'enable_presence_ack', False),
             cognitive_state=self.cognitive_state_engine,
+            model_manager=self.model_manager,
         )
         
         tts_worker = TtsWorker(
@@ -235,6 +242,7 @@ class FridayApp:
         await self.terminal_ui.stop()
         await self.supervisor.stop()
         await self.ollama_client.aclose()
+        await self.model_manager.stop()
         await self.event_bus.publish(Event.create(EventType.SYSTEM_STOPPED, {}, "app"))
         await self.event_bus.drain()
         await self.event_bus.stop()

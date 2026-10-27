@@ -21,6 +21,8 @@ WEB_SEARCH_RESULTS_MAX_CHARS = 5500
 WEB_SEARCH_HISTORY_MAX_CHARS = 1800
 WEB_SEARCH_QUERY_MAX_CHARS = 2500
 WEB_SEARCH_ACK_DELAY_SECONDS = 1.0
+WEB_ANSWER_GENERATION_TIMEOUT_SECONDS = 18.0
+WEB_ANSWER_REPAIR_TIMEOUT_SECONDS = 8.0
 WEB_SEARCH_FAILURE_MESSAGE = "I couldn't reach the web right now."
 WEB_SEARCH_FAILURE_MESSAGE_HI = "मैं अभी वेब तक नहीं पहुँच सका। कृपया थोड़ी देर बाद फिर कोशिश करें।"
 WEB_TOOLS = {"search_web", "research_web", "open_section"}
@@ -384,9 +386,13 @@ class WebSearchMixin:
             return
 
         pending.response_started = True
-        asyncio.create_task(
+        task = asyncio.create_task(
             self._generate_web_search_answer(event.correlation_id, pending, results),
             name=f"web-search-answer-{pending.turn_id}",
+        )
+        self._web_search_answer_tasks[event.correlation_id or pending.turn_id] = task
+        task.add_done_callback(
+            lambda _: self._web_search_answer_tasks.pop(event.correlation_id or pending.turn_id, None)
         )
 
     async def _handle_web_search_failed(self, event: Event) -> None:
@@ -589,7 +595,7 @@ class WebSearchMixin:
             web_answer_max_tokens = 180 if str(active_model).lower() == "7b" else 650
             answer = await asyncio.wait_for(
                 self.streaming_worker.generate_buffered(prompt, max_tokens=web_answer_max_tokens),
-                timeout=30,
+                timeout=WEB_ANSWER_GENERATION_TIMEOUT_SECONDS,
             )
             if not answer.strip():
                 await self._finish_web_search_with_message(
@@ -641,7 +647,7 @@ class WebSearchMixin:
                 )
                 revised = await asyncio.wait_for(
                     self.streaming_worker.generate_buffered(repair, max_tokens=web_answer_max_tokens),
-                    timeout=25,
+                    timeout=WEB_ANSWER_REPAIR_TIMEOUT_SECONDS,
                 )
                 revised = resolve_citations(revised, selected_results)
                 revised_constraints = answer_constraint_feedback(revised, selected_results, question)

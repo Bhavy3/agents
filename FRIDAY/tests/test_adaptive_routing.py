@@ -34,6 +34,33 @@ async def test_router_urgent_complex_uses_3b():
     assert reason == "complex_query_urgent_use_3b_fast"
 
 
+@pytest.mark.asyncio
+async def test_router_long_complex_request_avoids_excessive_7b_wait():
+    manager = MagicMock()
+    manager.current_model = "3b"
+    manager.model_processes = {"3b": object(), "7b": None}
+    router = AdaptiveRouter(model_manager=manager)
+    query = "Find a verified non-stop route from one city to another tomorrow under a strict budget, including schedule, baggage, and bookable fare details, and report every missing constraint without inventing anything."
+    model, reason = await router.decide_model(query)
+    assert model == "3b"
+    assert reason == "complex_query_exceeds_interactive_cap_use_3b_fast"
+
+
+@pytest.mark.asyncio
+async def test_router_does_not_trust_stale_7b_process_without_health_readiness():
+    manager = MagicMock()
+    manager.current_model = "3b"
+    manager.model_processes = {"3b": object(), "7b": object()}
+    manager.model_ready = {"3b": True, "7b": False}
+    router = AdaptiveRouter(model_manager=manager)
+    query = "Compare mirrorless cameras under EUR 900 with 4K video and a weather-sealed body; preserve every constraint."
+
+    model, reason = await router.decide_model(query)
+
+    assert model == "3b"
+    assert reason == "complex_query_exceeds_interactive_cap_use_3b_fast"
+
+
 def test_latency_budget_inference_urgent():
     """Urgent keywords set low latency budget."""
     assert infer_latency_budget("do this asap") == 2.0

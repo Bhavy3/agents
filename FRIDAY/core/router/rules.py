@@ -84,7 +84,10 @@ def fast_chat_intent(text: str) -> Intent | None:
     normalized = " ".join(text.strip().lower().split())
     if not normalized or len(normalized) > 240:
         return None
-    if normalized in _FAST_CHAT_SMALL_TALK:
+    small_talk = re.sub(r"[?!.,]+$", "", normalized).strip()
+    small_talk = re.sub(r"\bto\s+day\b", "today", small_talk)
+    small_talk = re.sub(r"^(?:so|well)\s+", "", small_talk)
+    if small_talk in _FAST_CHAT_SMALL_TALK:
         return Intent(IntentName.CHAT, 1.0, {}, source=FAST_CHAT_SOURCE)
     if _FAST_CHAT_ACTION_OR_DYNAMIC_RE.search(normalized):
         return None

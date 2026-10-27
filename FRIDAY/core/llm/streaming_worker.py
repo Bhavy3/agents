@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from contextlib import suppress
 from typing import Any
 
@@ -21,11 +22,13 @@ class StreamingLlmWorker:
         ollama_client: OllamaClient,
         aggregator: ResponseAggregator,
         timeout_seconds: float | None = None,
+        model_manager: Any | None = None,
     ) -> None:
         self.event_bus = event_bus
         self.ollama = ollama_client
         self.aggregator = aggregator
         self.timeout_seconds = float(timeout_seconds) if timeout_seconds is not None else float(getattr(ollama_client, "timeout_seconds", 30.0))
+        self.model_manager = model_manager
         self.logger = get_logger("llm.streaming_worker")
         self._active_tasks: dict[str, asyncio.Task] = {}
         self.selected_model = self._initial_model()
@@ -72,7 +75,13 @@ class StreamingLlmWorker:
     # Explicit alias for callers that describe this as a routing selection.
     select_model = set_model
 
-    async def stream_reasoning(self, prompt: str, correlation_id: str | None = None) -> str:
+    async def stream_reasoning(
+        self,
+        prompt: str,
+        correlation_id: str | None = None,
+        *,
+        _escalated: bool = False,
+    ) -> str:
         """Start a streaming reasoning task. Returns the full aggregated text."""
         backend_model = getattr(self.ollama, "backend_model", None)
         if not isinstance(backend_model, str) or not backend_model:
@@ -91,7 +100,10 @@ class StreamingLlmWorker:
         self._active_tasks[stream_id] = task
 
         try:
-            return await asyncio.wait_for(asyncio.shield(task), timeout=self.timeout_seconds)
+            result = await asyncio.wait_for(asyncio.shield(task), timeout=self.timeout_seconds)
+            if not _escalated and not result.strip() and await self._escalate_after_failure():
+                return await self.stream_reasoning(prompt, correlation_id, _escalated=True)
+            return result
         except asyncio.TimeoutError:
             self.logger.warning(
                 "llm_stream_timeout",
@@ -104,6 +116,8 @@ class StreamingLlmWorker:
             if stream_id in self._active_tasks:
                 self._active_tasks.pop(stream_id, None)
             await self.aggregator.handle_timeout(stream_id, "llm_stream_timeout", correlation_id)
+            if not _escalated and await self._escalate_after_failure():
+                return await self.stream_reasoning(prompt, correlation_id, _escalated=True)
             return ""
         except asyncio.CancelledError:
             if stream_id in self._active_tasks:
@@ -112,6 +126,22 @@ class StreamingLlmWorker:
             raise
         finally:
             self._active_tasks.pop(stream_id, None)
+
+    async def _escalate_after_failure(self) -> bool:
+        """Move a failed 3B stream to the real 7B endpoint once."""
+        if self.model_manager is None or getattr(self.model_manager, "current_model", None) == "7b":
+            return False
+        switch = getattr(self.model_manager, "switch_model", None)
+        if not callable(switch):
+            return False
+        switched = switch("7b", "stream_failure")
+        if inspect.isawaitable(switched):
+            switched = await switched
+        if not switched:
+            return False
+        self.set_model("7b", "stream_failure")
+        self.logger.warning("llm_stream_escalated_to_7b", extra={"reason": "stream_failure"})
+        return True
 
     async def generate_buffered(self, prompt: str, max_tokens: int | None = None) -> str:
         """Generate text without publishing chunks before a caller can validate it."""

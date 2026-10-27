@@ -60,6 +60,7 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
         enable_presence_ack: bool = False,
         cognitive_state: CognitiveStateEngine | None = None,
         state_engine: CognitiveStateEngine | None = None,
+        model_manager: object | None = None,
     ) -> None:
         super().__init__("orchestrator", event_bus)
         self.intent_router = intent_router
@@ -80,7 +81,7 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
         # The streaming worker is the sole owner of the active request model.
         # The legacy ModelManager remains available to its direct callers, but
         # ordinary routing must not launch a second llama-server process.
-        self.adaptive_router = AdaptiveRouter()
+        self.adaptive_router = AdaptiveRouter(model_manager=model_manager)
         if cognitive_state is not None and state_engine is not None and cognitive_state is not state_engine:
             raise ValueError("cognitive_state and state_engine must reference the same engine")
         self.cognitive_state = cognitive_state or state_engine or CognitiveStateEngine(event_bus)
@@ -92,6 +93,7 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
         self.active_turn_id: str | None = None
         self._pending_web_searches: dict[str, PendingWebSearch] = {}
         self._web_search_ack_tasks: dict[str, asyncio.Task[None]] = {}
+        self._web_search_answer_tasks: dict[str, asyncio.Task[None]] = {}
         self._turn_ids_by_correlation_id: dict[str, str] = {}
         self._init_memory_context()
         self.current_mode = PersonaMode.ENGINEERING
@@ -148,6 +150,22 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
         self.event_bus.subscribe(EventType.ACTION_GRAPH_COMPLETED, self._handle_workflow_terminal)
         self.event_bus.subscribe(EventType.ACTION_GRAPH_FAILED, self._handle_workflow_terminal)
         await super().run()
+
+    async def stop(self) -> None:
+        """Cancel turn-owned background work before the shared client closes."""
+        tasks = list(self._web_search_answer_tasks.values())
+        tasks.extend(self._web_search_ack_tasks.values())
+        if self._routing_task is not None:
+            tasks.append(self._routing_task)
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._web_search_answer_tasks.clear()
+        self._web_search_ack_tasks.clear()
+        self._routing_task = None
+        await super().stop()
 
     async def _handle_workflow_terminal(self, event: Event) -> None:
         correlation_id = event.correlation_id or ""
@@ -599,14 +617,21 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
                     self._chunk_buffer.clear()
                 action_id = str(uuid.uuid4())
                 action_correlation_id = correlation_id or str(uuid.uuid4())
-                if intent.name == IntentName.SEARCH_WEB:
+                if intent.name in {IntentName.SEARCH_WEB, IntentName.RESEARCH_WEB, IntentName.OPEN_SECTION}:
                     deferred_web_search = action_correlation_id
+                    pending_query = str(
+                        intent.parameters.get(
+                            "query",
+                            intent.parameters.get("section", text),
+                        )
+                    )
                     self._pending_web_searches[action_correlation_id] = PendingWebSearch(
-                        query=str(intent.parameters.get("query", text))[:WEB_SEARCH_QUERY_MAX_CHARS],
+                        query=pending_query,
                         user_text=text,
                         turn_id=turn_id,
                         personality_instructions=delivery_instructions,
                         memory_context=mem_ctx,
+                        tool_name=intent.name.value,
                     )
                     self._web_search_ack_tasks[action_correlation_id] = asyncio.create_task(
                         self._announce_web_search_if_slow(action_correlation_id, turn_id),

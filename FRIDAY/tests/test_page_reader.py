@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from core.tools.page_reader import extract_relevant_text, fetch_page
+from core.tools.page_reader import extract_relevant_text, extract_section, fetch_page
 
 SAMPLE_HTML = """
 <!DOCTYPE html>
@@ -43,14 +43,23 @@ def test_c_extract_relevant_text_max_chars():
     assert len(res) > 0
 
 
+def test_d_extract_section_returns_heading_content_and_anchor():
+    html = "<h2 id='pricing'>Pricing</h2><p>Starts at $499.</p><h2>Specifications</h2><p>1440p gaming.</p>"
+
+    text, anchor = extract_section(html, "pricing")
+
+    assert anchor == "pricing"
+    assert "Starts at $499" in text
+    assert "1440p gaming" not in text
+
+
 @pytest.mark.asyncio
 async def test_d_fetch_page_timeout_returns_none(monkeypatch):
-    mock_client = AsyncMock()
-    mock_client.__aenter__.return_value = mock_client
-    mock_client.__aexit__.return_value = None
-    mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
+    def fail(request):
+        raise httpx.ReadTimeout("timed out", request=request)
 
-    monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: mock_client)
+    client_type = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: client_type(transport=httpx.MockTransport(fail), **kwargs))
 
     result = await fetch_page("https://example.com")
     assert result is None

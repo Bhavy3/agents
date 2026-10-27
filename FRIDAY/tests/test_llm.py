@@ -1,10 +1,13 @@
 import asyncio
 import pytest
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 from core.events.bus import EventBus
 from core.events.event_types import EventType
 from core.llm.ollama_client import OllamaClient, parse_llm_response
+from core.llm.local_llm_client import LocalLLMClient, LlmProvider
 from core.router.llm_fallback import LlmFallbackRouter
+from core.router import llm_fallback
 from core.router.rules import IntentName
 
 def test_parse_llm_response_valid():
@@ -41,6 +44,21 @@ async def test_llm_fallback_router_handles_failure():
         
         assert intent.name == IntentName.CHAT
         assert intent.source == "llm_fallback_error"
+
+
+@pytest.mark.asyncio
+async def test_llm_fallback_router_bounds_slow_generation(monkeypatch):
+    async def never_returns(*args, **kwargs):
+        await asyncio.Event().wait()
+
+    client = SimpleNamespace(model="test-model", generate=never_returns)
+    router = LlmFallbackRouter(ollama_client=client)
+    monkeypatch.setattr(llm_fallback, "ROUTER_LLM_TIMEOUT_SECONDS", 0.01)
+
+    intent = await asyncio.wait_for(router.route("hello"), timeout=0.2)
+
+    assert intent.name == IntentName.CHAT
+    assert intent.source == "llm_fallback_error"
 
 @pytest.mark.asyncio
 async def test_llm_fallback_router_emits_events():
@@ -95,3 +113,34 @@ async def test_health_check_ttl_caching():
         assert mock_get_2.call_count == 0
         
     await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_generate_reacquires_client_after_closed_request(monkeypatch):
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return {"choices": [{"message": {"content": "recovered"}}]}
+
+    class ClosedClient:
+        async def post(self, *args, **kwargs):
+            raise RuntimeError("Cannot send a request, as the client has been closed.")
+
+    class HealthyClient:
+        async def post(self, *args, **kwargs):
+            return Response()
+
+    client = LocalLLMClient(
+        base_url="http://127.0.0.1:8080",
+        provider=LlmProvider.LLAMACPP,
+        max_retries=2,
+    )
+    client._ensure_available = AsyncMock(return_value=True)
+    clients = iter((ClosedClient(), HealthyClient()))
+    monkeypatch.setattr(client, "_get_client", lambda: next(clients))
+
+    result, metrics = await client.generate("hello", max_tokens=20)
+
+    assert result == "recovered"
+    assert metrics.success is True

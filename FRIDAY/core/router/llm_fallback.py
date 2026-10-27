@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 logger = logging.getLogger(__name__)
 
+ROUTER_LLM_TIMEOUT_SECONDS = 12.0
+
 import json
 import re
 import asyncio
@@ -140,7 +142,10 @@ class LlmFallbackRouter:
         await self._emit(EventType.LLM_REQUEST_SENT, {"model": self.ollama.model, "prompt_preview": text[:100]}, correlation_id)
 
         try:
-            raw_response, metrics = await self.ollama.generate(self._build_prompt(text, personality_instructions), max_tokens=80)
+            raw_response, metrics = await asyncio.wait_for(
+                self.ollama.generate(self._build_prompt(text, personality_instructions), max_tokens=80),
+                timeout=ROUTER_LLM_TIMEOUT_SECONDS,
+            )
         except Exception as e:
             logger.exception("router_llm_generate_failed", extra={"model": self.ollama.model})
             await self._emit(EventType.LLM_FAILURE, {"error": str(e), "model": self.ollama.model}, correlation_id)

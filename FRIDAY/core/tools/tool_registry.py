@@ -8,12 +8,12 @@ from .system_tools import SystemTools
 class ToolRegistry:
     """Central registry for all executable tools in FRIDAY."""
 
-    def __init__(self, event_bus: Any = None):
+    def __init__(self, event_bus: Any = None, query_client: Any = None):
         self._tools: Dict[str, Callable[..., Any]] = {}
         self._event_bus = event_bus
         
         # Instantiate tool collections
-        self._browser = BrowserTools()
+        self._browser = BrowserTools(query_client=query_client)
         self._fs = FilesystemTools()
         self._desktop = DesktopTools()
         self._system = SystemTools()
@@ -24,6 +24,8 @@ class ToolRegistry:
         # Browser
         self.register("open_url", self._browser.open_url)
         self.register("search_web", self._browser.search_web)
+        self.register("research_web", self._browser.research_web)
+        self.register("open_section", self._browser.open_section)
         
         # Filesystem
         self.register("list_dir", self._fs.list_dir)

@@ -68,6 +68,33 @@ class LocalLLMClient:
         self.requested_model = str(model)
         self.selection_reason = str(reason)
 
+    async def use_backend(
+        self,
+        base_url: str,
+        *,
+        model: str | None = None,
+        logical_model: str | None = None,
+        reason: str = "",
+    ) -> None:
+        """Move requests to a healthy model endpoint without changing callers.
+
+        A llama.cpp server has one loaded model.  Keeping endpoint selection
+        here prevents a logical 7B label from being mistaken for 7B weights
+        on the original 3B endpoint.
+        """
+        await self.aclose()
+        self.base_url = str(base_url).rstrip("/")
+        self.provider = resolve_llm_provider(self.base_url, self.provider.value)
+        parsed = urlparse(self.base_url)
+        self._host = parsed.hostname or "127.0.0.1"
+        self._port = parsed.port or (11434 if self.provider == LlmProvider.OLLAMA else 8080)
+        self._available = None
+        self._last_health_check = 0.0
+        if model:
+            self.model = str(model)
+            self.backend_model = self.model
+        self.set_requested_model(logical_model or self.requested_model, reason)
+
     # Compatibility spelling for small fake clients and callers that use the
     # more general model-selection terminology.
     select_model = set_requested_model
@@ -168,13 +195,17 @@ class LocalLLMClient:
             },
         )
 
-        client = self._get_client()
         for attempt in range(1, self.max_retries + 1):
             try:
                 if not await self._ensure_available(attempt):
                     last_error = "llm_unavailable"
                     await asyncio.sleep(min(0.25 * attempt, 1.0))
                     continue
+
+                # A shared client may be closed by a model switch or shutdown
+                # while another request is between retries. Reacquire it for
+                # each attempt instead of retrying against the closed object.
+                client = self._get_client()
 
                 if self.provider == LlmProvider.LLAMACPP:
                     payload = self._chat_payload(prompt, stream=False, max_tokens_override=max_tokens)

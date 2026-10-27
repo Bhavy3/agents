@@ -29,7 +29,7 @@ class FakeDDGS:
     def __init__(self, timeout: int) -> None:
         self.timeout = timeout
 
-    def text(self, query: str, *, max_results: int) -> list[dict[str, str]]:
+    def text(self, query: str, *, max_results: int, **kwargs) -> list[dict[str, str]]:
         if self.delay_seconds:
             import time
 
@@ -78,6 +78,93 @@ async def test_search_web_returns_five_bounded_text_results(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_search_web_preserves_source_urls_for_evidence(monkeypatch):
+    FakeDDGS.results = [{
+        "title": "Example product",
+        "href": "https://www.amazon.in/dp/EXAMPLE",
+        "body": "Example product price is INR 999.",
+    }]
+    FakeDDGS.error = None
+    FakeDDGS.delay_seconds = 0.0
+    monkeypatch.setattr(browser_tools, "DDGS", FakeDDGS)
+
+    result = await BrowserTools().search_web("example product price amazon")
+
+    assert result.success is True
+    assert "Source: https://www.amazon.in/dp/EXAMPLE" in result.output
+
+
+@pytest.mark.asyncio
+async def test_search_web_falls_back_when_primary_backend_has_no_results(monkeypatch):
+    class BackendAwareDDGS:
+        def __init__(self, timeout: int) -> None:
+            self.timeout = timeout
+
+        def text(self, query: str, *, max_results: int, backend: str):
+            if backend == "auto":
+                return []
+            if backend == "duckduckgo":
+                return [{
+                    "title": "Fallback result",
+                    "href": "https://example.com/fallback",
+                    "body": "Fallback evidence.",
+                }]
+            return []
+
+    monkeypatch.setattr(browser_tools, "DDGS", BackendAwareDDGS)
+
+    result = await BrowserTools().search_web("Nothing Phone 4a price")
+
+    assert result.success is True
+    assert "Fallback result" in result.output
+    assert "https://example.com/fallback" in result.output
+
+
+@pytest.mark.asyncio
+async def test_research_web_fetches_multiple_sources(monkeypatch):
+    class ResearchDDGS:
+        def __init__(self, timeout: int) -> None:
+            self.timeout = timeout
+
+        def text(self, query: str, *, max_results: int, backend: str):
+            return [
+                {"title": "ASUS card one", "href": "https://example.com/one", "body": "ASUS card one"},
+                {"title": "ASUS card two", "href": "https://example.com/two", "body": "ASUS card two"},
+            ] if backend == "auto" else []
+
+    async def fake_fetch(url: str):
+        return f"<h1>ASUS graphics cards</h1><p>{url} is suitable for 1440p gaming.</p>"
+
+    monkeypatch.setattr(browser_tools, "DDGS", ResearchDDGS)
+    monkeypatch.setattr(browser_tools, "fetch_page", fake_fetch)
+
+    result = await BrowserTools().research_web("popular ASUS graphics cards for 1440p", max_sources=2)
+
+    assert result.success is True
+    assert "https://example.com/one" in result.output
+    assert "https://example.com/two" in result.output
+    assert "1440p gaming" in result.output
+
+
+@pytest.mark.asyncio
+async def test_open_section_resolves_anchor_and_requests_browser_open(monkeypatch):
+    async def fake_fetch(url: str):
+        return "<h2 id='pricing'>Pricing</h2><p>Starts at $499.</p>"
+
+    async def fake_open(self, url: str):
+        return browser_tools.ToolResult(True, f"opened {url}")
+
+    monkeypatch.setattr(browser_tools, "fetch_page", fake_fetch)
+    monkeypatch.setattr(BrowserTools, "open_url", fake_open)
+
+    result = await BrowserTools().open_section("https://example.com/product", "pricing")
+
+    assert result.success is True
+    assert "https://example.com/product#pricing" in result.output
+    assert "Starts at $499" in result.output
+
+
+@pytest.mark.asyncio
 async def test_search_web_reports_empty_results(caplog, monkeypatch):
     FakeDDGS.results = []
     FakeDDGS.error = None
@@ -87,7 +174,8 @@ async def test_search_web_reports_empty_results(caplog, monkeypatch):
     result = await BrowserTools().search_web("unknown topic")
 
     assert result.success is False
-    assert result.output == "I couldn't reach the web right now."
+    assert result.error == "no_results"
+    assert "no matching results" in result.output
     assert any(record.message == "web_search_empty_results" for record in caplog.records)
 
 
@@ -132,6 +220,23 @@ def test_search_and_open_google_route_differently():
     assert open_google is not None and open_google.name == IntentName.OPEN_URL
     assert open_google.parameters["url"] == "https://www.google.com"
     assert tell_me is not None and tell_me.name == IntentName.SEARCH_WEB
+
+
+def test_complex_product_request_routes_to_research():
+    intent = route_by_rules("Tell me the popular ASUS graphics cards and which one I should buy")
+
+    assert intent is not None
+    assert intent.name == IntentName.RESEARCH_WEB
+    assert "ASUS" in intent.parameters["query"]
+
+
+def test_section_request_routes_to_open_section():
+    intent = route_by_rules("Show me the pricing section https://example.com/product")
+
+    assert intent is not None
+    assert intent.name == IntentName.OPEN_SECTION
+    assert intent.parameters["url"] == "https://example.com/product"
+    assert intent.parameters["section"] == "pricing"
 
 
 async def _run_search_turn(

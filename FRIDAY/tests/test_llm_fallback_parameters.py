@@ -66,3 +66,8 @@ def test_10_unicode_query():
 def test_11_parameters_null_returns_empty_dict():
     raw = '{"intent": "search_web", "confidence": 0.9, "parameters": null}'
     assert _extract_parameters(raw) == {}
+
+
+def test_12_truncated_query_value_is_recovered():
+    raw = '{"intent": "research_web", "confidence": 0.9, "parameters": {"query": "latest stable Python release available on October 23, 2026, excluding alpha, beta, release candidates,'
+    assert _extract_parameters(raw)["query"].startswith("latest stable Python release")

@@ -10,13 +10,16 @@ from .tool_models import ToolResult, ToolRisk, ToolAuditEntry
 from .tool_registry import ToolRegistry
 from .tool_validator import ToolValidator
 from .confirmations import ConfirmationSystem
+from .browser_tools import WEB_TOOL_TIMEOUT_SECONDS
+
+WEB_TOOLS = {"search_web", "research_web", "open_section"}
 
 
 class ToolWorker(BaseWorker):
-    def __init__(self, event_bus: EventBus, metrics: Any = None):
+    def __init__(self, event_bus: EventBus, metrics: Any = None, query_client: Any = None):
         super().__init__("tool_worker", event_bus)
         self.metrics = metrics
-        self.registry = ToolRegistry(event_bus=event_bus)
+        self.registry = ToolRegistry(event_bus=event_bus, query_client=query_client)
         self.validator = ToolValidator()
         self.confirmations = ConfirmationSystem(event_bus)
         self._active_tasks: Dict[str, asyncio.Task] = {}
@@ -114,10 +117,10 @@ class ToolWorker(BaseWorker):
             await self.event_bus.publish(Event.create(EventType.RESPONSE_READY, {"text": err_msg}, self.name, correlation_id))
             return ToolResult(False, "", err_msg)
 
-        if name == "search_web" and not (isinstance(params.get("query"), str) and params.get("query").strip()):
+        if name in {"search_web", "research_web"} and not (isinstance(params.get("query"), str) and params.get("query").strip()):
             await self.event_bus.publish(Event.create(
                 EventType.ACTION_FAILED,
-                {"tool_name": "search_web", "error": "missing_query"},
+                {"tool_name": name, "error": "missing_query"},
                 self.name,
                 correlation_id,
             ))
@@ -131,9 +134,11 @@ class ToolWorker(BaseWorker):
             correlation_id
         ))
 
+        timeout = WEB_TOOL_TIMEOUT_SECONDS if name in WEB_TOOLS else 15.0
         try:
-            # Enforce tool timeout (default 15s)
-            result = await asyncio.wait_for(tool_func(**params), timeout=15.0)
+            # Web retrieval includes fallback searches and concurrent page
+            # reads, each with smaller deadlines inside this overall budget.
+            result = await asyncio.wait_for(tool_func(**params), timeout=timeout)
             duration = (time.time() - start_time) * 1000
             
             # Audit recording
@@ -168,7 +173,7 @@ class ToolWorker(BaseWorker):
             response_text = result.output if result.success else f"Action failed: {result.error}"
             if not response_text:
                 response_text = f"Action {name} completed successfully."
-            if name != "search_web":
+            if name not in WEB_TOOLS:
                 await self.event_bus.publish(Event.create(
                     EventType.RESPONSE_READY,
                     {"text": response_text},
@@ -179,15 +184,15 @@ class ToolWorker(BaseWorker):
             return result
 
         except asyncio.TimeoutError:
-            err_msg = "Execution timed out (15s limit)"
+            err_msg = f"Execution timed out ({timeout:g}s limit)"
             await self.event_bus.publish(Event.create(EventType.ACTION_TIMEOUT, {"tool_name": name}, self.name, correlation_id))
-            if name != "search_web":
+            if name not in WEB_TOOLS:
                 await self.event_bus.publish(Event.create(EventType.RESPONSE_READY, {"text": f"Action {name} timed out."}, self.name, correlation_id))
             return ToolResult(False, "", err_msg)
         except Exception as e:
             self.logger.exception("tool_execution_failed")
             await self.event_bus.publish(Event.create(EventType.ACTION_FAILED, {"tool_name": name, "error": str(e)}, self.name, correlation_id))
-            if name != "search_web":
+            if name not in WEB_TOOLS:
                 await self.event_bus.publish(Event.create(EventType.RESPONSE_READY, {"text": f"Action failed with error: {str(e)}"}, self.name, correlation_id))
             return ToolResult(False, "", str(e))
 

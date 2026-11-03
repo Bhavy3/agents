@@ -246,7 +246,7 @@ async def test_interruption_during_buffered_generation_prevents_late_answer():
 
 
 @pytest.mark.asyncio
-async def test_slow_web_answer_uses_evidence_fallback_within_answer_budget(monkeypatch):
+async def test_slow_web_answer_uses_evidence_fallback_within_answer_budget(monkeypatch, caplog):
     bus = EventBus()
     await bus.start()
 
@@ -279,6 +279,8 @@ async def test_slow_web_answer_uses_evidence_fallback_within_answer_budget(monke
         await bus.drain()
         assert len(responses) == 1
         assert "https://example.com/weather" in responses[0]
+        assert any(record.message == "web_search_answer_generation_timed_out" for record in caplog.records)
+        assert not any(record.message == "web_search_answer_generation_failed" for record in caplog.records)
     finally:
         await app.stop()
         await bus.stop()

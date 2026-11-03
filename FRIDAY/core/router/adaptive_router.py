@@ -26,7 +26,11 @@ class AdaptiveRouter:
             return True
         readiness = getattr(self.model_manager, "model_ready", None)
         if isinstance(readiness, dict) and "7b" in readiness:
-            return bool(readiness["7b"]) and processes.get("7b") is not None
+            if not readiness["7b"] or processes.get("7b") is None:
+                return False
+        gpu_layers = getattr(self.model_manager, "model_gpu_layers", None)
+        if isinstance(gpu_layers, dict) and gpu_layers.get("7b") == 0:
+            return False
         return processes.get("7b") is not None
 
     async def decide_model(self, utterance: str) -> Tuple[str, str]:

@@ -21,8 +21,8 @@ WEB_SEARCH_RESULTS_MAX_CHARS = 5500
 WEB_SEARCH_HISTORY_MAX_CHARS = 1800
 WEB_SEARCH_QUERY_MAX_CHARS = 2500
 WEB_SEARCH_ACK_DELAY_SECONDS = 1.0
-WEB_ANSWER_GENERATION_TIMEOUT_SECONDS = 18.0
-WEB_ANSWER_REPAIR_TIMEOUT_SECONDS = 8.0
+WEB_ANSWER_GENERATION_TIMEOUT_SECONDS = 10.0
+WEB_ANSWER_REPAIR_TIMEOUT_SECONDS = 6.0
 WEB_SEARCH_FAILURE_MESSAGE = "I couldn't reach the web right now."
 WEB_SEARCH_FAILURE_MESSAGE_HI = "मैं अभी वेब तक नहीं पहुँच सका। कृपया थोड़ी देर बाद फिर कोशिश करें।"
 WEB_TOOLS = {"search_web", "research_web", "open_section"}
@@ -704,6 +704,16 @@ class WebSearchMixin:
                     turn_released = False
             if turn_released:
                 await self._start_next_cli_turn()
+        except (asyncio.TimeoutError, TimeoutError):
+            self.logger.warning(
+                "web_search_answer_generation_timed_out",
+                extra={"timeout_seconds": WEB_ANSWER_GENERATION_TIMEOUT_SECONDS},
+            )
+            await self._finish_web_search_with_message(
+                correlation_id,
+                pending,
+                web_evidence_fallback(results, pending.user_text),
+            )
         except asyncio.CancelledError:
             raise
         except Exception:

@@ -29,11 +29,18 @@ Respond ONLY with a valid JSON object. No explanations outside JSON.
 Available intents: {available_intents}, chat.
 
 If the user is greeting, chatting, or asking a general question with no clear system action (like restarting a worker or checking status), the intent MUST be 'chat', not 'help' or any other tool name.
+If the user asks to write, generate, or explain code in conversation without specifying an explicit target file path on disk, the intent MUST be 'chat'. Only choose 'write_text_file' when the user explicitly directs to save or write to a specific file or path.
 If the user asks for a simple lookup, use 'search_web' with a concise query. If the user asks to compare products, find popular/best options, recommend what to buy, or research a topic across sources, use 'research_web' with the original question as the query. If the user asks to show/open/read a named section of a specific URL, use 'open_section' with parameters {"url": "...", "section": "..."}. Use 'open_url' only when the user explicitly asks to open or launch a website in the browser.
 
 Examples:
 User Input: hi
 {"intent": "chat", "confidence": 1.0, "suggested_action": "", "reasoning_summary": "Greeting.", "parameters": {}}
+
+User Input: write a 3-line python function to check if a word is a palindrome
+{"intent": "chat", "confidence": 0.95, "suggested_action": "", "reasoning_summary": "Code generation in chat.", "parameters": {}}
+
+User Input: save a script named test.py that prints hello
+{"intent": "write_text_file", "confidence": 0.95, "suggested_action": "", "reasoning_summary": "Write file to disk.", "parameters": {"file_path": "test.py", "content": "print('hello')"}}
 
 User Input: give in depth knowledge about the jarvis
 {"intent": "chat", "confidence": 0.9, "suggested_action": "", "reasoning_summary": "General question.", "parameters": {}}
@@ -141,14 +148,16 @@ class LlmFallbackRouter:
             await self.adaptive_router.route(text)
         await self._emit(EventType.LLM_REQUEST_SENT, {"model": self.ollama.model, "prompt_preview": text[:100]}, correlation_id)
 
+        router_max_tokens = 140
         try:
             raw_response, metrics = await asyncio.wait_for(
-                self.ollama.generate(self._build_prompt(text, personality_instructions), max_tokens=80),
+                self.ollama.generate(self._build_prompt(text, personality_instructions), max_tokens=router_max_tokens),
                 timeout=ROUTER_LLM_TIMEOUT_SECONDS,
             )
         except Exception as e:
+            error = str(e) or type(e).__name__
             logger.exception("router_llm_generate_failed", extra={"model": self.ollama.model})
-            await self._emit(EventType.LLM_FAILURE, {"error": str(e), "model": self.ollama.model}, correlation_id)
+            await self._emit(EventType.LLM_FAILURE, {"error": error, "model": self.ollama.model}, correlation_id)
             return self._fallback(text)
 
         if not metrics.success:
@@ -156,7 +165,24 @@ class LlmFallbackRouter:
             await self._emit(EventType.LLM_FAILURE, {"error": metrics.error or "unknown", "model": metrics.model}, correlation_id)
             return self._fallback(text)
 
+        # Check for response truncation
+        raw_clean = (raw_response or "").strip()
+        is_truncated = False
+        if raw_clean:
+            open_braces = raw_clean.count("{") - raw_clean.count("}")
+            if open_braces > 0 or raw_clean.endswith(('"', ':', ',', '[')):
+                is_truncated = True
+
         parsed = parse_llm_response(raw_response or "")
+        if not parsed and is_truncated:
+            # Check if intent was emitted before truncation occurred
+            intent_match = re.search(r'"intent"\s*:\s*"([a-zA-Z0-9_]+)"', raw_clean)
+            if intent_match:
+                inferred = intent_match.group(1).lower()
+                # Under truncation, strictly preserve search requests; never downgrade search to plain chat
+                if inferred in {"search_web", "research_web"}:
+                    parsed = LlmResponse(intent=inferred, confidence=0.8, suggested_action="", reasoning_summary="[Truncated Search]")
+
         if not parsed:
             logger.warning("router_llm_response_parse_failed", extra={"raw_response": raw_response})
             await self._emit(EventType.LLM_FAILURE, {"error": "malformed_response", "model": self.ollama.model}, correlation_id)
@@ -197,6 +223,21 @@ class LlmFallbackRouter:
                 parameters["query"] = text.strip()
             if intent_name == IntentName.RESEARCH_WEB:
                 parameters.setdefault("max_sources", 3)
+
+        if intent_name == IntentName.WRITE_TEXT_FILE:
+            has_file_target = (
+                bool(re.search(r'\b[\w\-]+\.(?:py|txt|json|md|sh|js|ts|html|css|cpp|c|h|rs|go|yaml|yml|toml|ini|csv|log|bat|ps1|sql)\b', text, re.I))
+                or bool(re.search(r'\b(?:save|dump|export|output)\s+(?:it\s+)?(?:to|into|in|as)\b', text, re.I))
+                or bool(re.search(r'\b(?:to|into|in)\s+(?:a\s+|the\s+)?(?:file|disk)\b', text, re.I))
+                or bool(re.search(r'\b(?:create|make|write|save)\s+(?:a\s+|the\s+)?(?:new\s+)?file\b', text, re.I))
+                or bool(re.search(r'\b(?:named|called)\s+[\w\-]+(?:\.[\w]+)?\b', text, re.I))
+            )
+            if not has_file_target:
+                logger.info("code_or_text_request_without_file_target_routed_to_chat", extra={"text": text[:80]})
+                intent_name = IntentName.CHAT
+                intent_str = "chat"
+                if "content" in parameters and not parameters.get("response_text"):
+                    parameters["response_text"] = parameters["content"]
 
         chat_response_text = ""
         if intent_name == IntentName.CHAT:

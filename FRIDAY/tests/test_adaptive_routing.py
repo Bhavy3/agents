@@ -61,6 +61,22 @@ async def test_router_does_not_trust_stale_7b_process_without_health_readiness()
     assert reason == "complex_query_exceeds_interactive_cap_use_3b_fast"
 
 
+@pytest.mark.asyncio
+async def test_router_avoids_expensive_7b_when_gpu_offload_is_disabled():
+    manager = MagicMock()
+    manager.current_model = "3b"
+    manager.model_processes = {"3b": object(), "7b": object()}
+    manager.model_ready = {"3b": True, "7b": True}
+    manager.model_gpu_layers = {"3b": 33, "7b": 0}
+    router = AdaptiveRouter(model_manager=manager)
+    query = "Compare three database indexing strategies and explain their trade-offs in detail."
+
+    model, reason = await router.decide_model(query)
+
+    assert model == "3b"
+    assert reason == "complex_query_exceeds_interactive_cap_use_3b_fast"
+
+
 def test_latency_budget_inference_urgent():
     """Urgent keywords set low latency budget."""
     assert infer_latency_budget("do this asap") == 2.0

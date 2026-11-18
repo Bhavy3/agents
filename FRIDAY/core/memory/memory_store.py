@@ -29,6 +29,8 @@ class MemoryStore:
 
     def _init_db(self):
         with self._get_connection() as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS memories (
                     id TEXT PRIMARY KEY,
@@ -44,6 +46,12 @@ class MemoryStore:
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at)")
+            conn.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+                    id UNINDEXED,
+                    content
+                )
+            """)
 
     async def save(self, record: MemoryRecord, allow_update: bool = False) -> None:
         await asyncio.to_thread(self._save_sync, record, allow_update)
@@ -85,6 +93,11 @@ class MemoryStore:
                     (id, type, content, created_at, updated_at, source, confidence, explicit_user_approved, metadata_json)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, values)
+            try:
+                conn.execute("DELETE FROM memories_fts WHERE id = ?", (record.id,))
+                conn.execute("INSERT INTO memories_fts (id, content) VALUES (?, ?)", (record.id, record.content))
+            except sqlite3.OperationalError:
+                pass
 
     async def query(self, memory_type: MemoryType | None = None, limit: int = 100) -> list[MemoryRecord]:
         return await asyncio.to_thread(self._query_sync, memory_type, limit)
@@ -110,10 +123,28 @@ class MemoryStore:
         terms = list(dict.fromkeys(re.findall(r"[\w'-]+", text.lower())))[:20]
         if not terms:
             return self._query_sync(limit=limit)
+        bounded_limit = max(1, min(limit, 500))
+        try:
+            fts_query = " OR ".join(f'"{t}"' for t in terms if t.isalnum())
+            if fts_query:
+                query = """
+                    SELECT m.* FROM memories m
+                    JOIN memories_fts f ON m.id = f.id
+                    WHERE memories_fts MATCH ?
+                    ORDER BY bm25(memories_fts), m.created_at DESC
+                    LIMIT ?
+                """
+                with self._get_connection() as conn:
+                    cursor = conn.execute(query, (fts_query, bounded_limit))
+                    rows = cursor.fetchall()
+                    if rows:
+                        return [self._row_to_record(row) for row in rows]
+        except (sqlite3.OperationalError, Exception):
+            pass
         clauses = " OR ".join("content LIKE ?" for _ in terms)
         query = f"SELECT * FROM memories WHERE {clauses} ORDER BY created_at DESC LIMIT ?"
         params = [f"%{term}%" for term in terms]
-        params.append(max(1, min(limit, 500)))
+        params.append(bounded_limit)
 
         with self._get_connection() as conn:
             cursor = conn.execute(query, params)
@@ -138,3 +169,7 @@ class MemoryStore:
     def _delete_sync(self, record_id: str) -> None:
         with self._get_connection() as conn:
             conn.execute("DELETE FROM memories WHERE id = ?", (record_id,))
+            try:
+                conn.execute("DELETE FROM memories_fts WHERE id = ?", (record_id,))
+            except sqlite3.OperationalError:
+                pass

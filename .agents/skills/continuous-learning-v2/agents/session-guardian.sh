@@ -28,24 +28,24 @@ MAX_IDLE="${OBSERVER_MAX_IDLE_SECONDS:-1800}"
 # Uses HHMM integer comparison. Works on BSD date (macOS) and GNU date (Linux).
 # Supports overnight windows such as 2200-0600.
 # Set both ACTIVE_START and ACTIVE_END to 0 to disable this gate.
-if [ "$ACTIVE_START" -ne 0 ] || [ "$ACTIVE_END" -ne 0 ]; then
+if [[ "$ACTIVE_START" -ne 0 ]] || [[ "$ACTIVE_END" -ne 0 ]]; then
   current_hhmm=$(date +%k%M | tr -d ' ')
   current_hhmm_num=$(( 10#${current_hhmm:-0} ))
   active_start_num=$(( 10#${ACTIVE_START:-800} ))
   active_end_num=$(( 10#${ACTIVE_END:-2300} ))
 
   within_active_hours=0
-  if [ "$active_start_num" -lt "$active_end_num" ]; then
-    if [ "$current_hhmm_num" -ge "$active_start_num" ] && [ "$current_hhmm_num" -lt "$active_end_num" ]; then
+  if [[ "$active_start_num" -lt "$active_end_num" ]]; then
+    if [[ "$current_hhmm_num" -ge "$active_start_num" ]] && [[ "$current_hhmm_num" -lt "$active_end_num" ]]; then
       within_active_hours=1
     fi
   else
-    if [ "$current_hhmm_num" -ge "$active_start_num" ] || [ "$current_hhmm_num" -lt "$active_end_num" ]; then
+    if [[ "$current_hhmm_num" -ge "$active_start_num" ]] || [[ "$current_hhmm_num" -lt "$active_end_num" ]]; then
       within_active_hours=1
     fi
   fi
 
-  if [ "$within_active_hours" -ne 1 ]; then
+  if [[ "$within_active_hours" -ne 1 ]]; then
     echo "session-guardian: outside active hours (${current_hhmm}, window ${ACTIVE_START}-${ACTIVE_END})" >&2
     exit 1
   fi
@@ -58,7 +58,7 @@ fi
 # stderr uses basename only — never prints the full absolute path.
 
 project_root="${PROJECT_DIR:-}"
-if [ -z "$project_root" ] || [ ! -d "$project_root" ]; then
+if [[ -z "$project_root" ]] || [[ ! -d "$project_root" ]]; then
   project_root="$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")"
 fi
 project_name="$(basename "$project_root")"
@@ -83,7 +83,7 @@ else
   [[ "$last_spawn" =~ ^[0-9]+$ ]] || last_spawn=0
 
   elapsed=$(( now - last_spawn ))
-  if [ "$elapsed" -lt "$INTERVAL" ]; then
+  if [[ "$elapsed" -lt "$INTERVAL" ]]; then
     rm -rf "$_lock_dir"
     trap - EXIT INT TERM
     echo "session-guardian: cooldown active for '${project_name}' (last spawn ${elapsed}s ago, interval ${INTERVAL}s)" >&2
@@ -139,9 +139,9 @@ get_idle_seconds() {
   esac
 }
 
-if [ "$MAX_IDLE" -gt 0 ]; then
+if [[ "$MAX_IDLE" -gt 0 ]]; then
   idle_seconds=$(get_idle_seconds)
-  if [ "$idle_seconds" -gt "$MAX_IDLE" ]; then
+  if [[ "$idle_seconds" -gt "$MAX_IDLE" ]]; then
     echo "session-guardian: user idle ${idle_seconds}s (threshold ${MAX_IDLE}s), skipping" >&2
     exit 1
   fi

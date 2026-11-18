@@ -1,0 +1,1 @@
+console.log('JavaScript file created for the website.')

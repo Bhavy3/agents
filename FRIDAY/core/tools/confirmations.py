@@ -42,6 +42,10 @@ class ConfirmationSystem:
             result = await future
             return result
         except asyncio.CancelledError:
+            # A cancelled confirmation future means "not approved". Our own
+            # cancellation must propagate so shutdown can finish.
+            if not future.cancelled():
+                raise
             return False
         finally:
             self._pending_confirmations.pop(correlation_id, None)

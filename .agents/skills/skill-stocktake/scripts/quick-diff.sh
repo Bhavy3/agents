@@ -22,7 +22,7 @@ sort_nul_file() {
     const records = [];
     let start = 0;
     for (let index = 0; index < input.length; index += 1) {
-      if (input[index] === 0) {
+      if (input[[index]] === 0) {
         records.push(input.subarray(start, index + 1));
         start = index + 1;
       }

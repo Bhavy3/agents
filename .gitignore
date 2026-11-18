@@ -11,3 +11,4 @@ FRIDAY/scratch/
 FRIDAY/patch*.py
 FRIDAY/v/
 .venv/
+FRIDAY/.env

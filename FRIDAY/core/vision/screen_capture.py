@@ -16,7 +16,8 @@ class ScreenCaptureWorker(BaseWorker):
         super().__init__("screen_capture", event_bus)
         self.metrics = metrics
         self.validator = VisionValidator()
-        self._sct = mss.MSS()
+        factory = getattr(mss, "MSS", None) or getattr(mss, "mss", None)
+        self._sct = factory() if factory is not None else None
 
     async def run(self) -> None:
         self.event_bus.subscribe(EventType.SCREEN_CAPTURE_REQUESTED, self.handle_capture_request)

@@ -6,6 +6,9 @@ from core.orchestrator.conversation import _WORKFLOW_REQUEST
     # True positives: explicit workflow and multi-step triggers
     ("run workflow to analyze logs", True),
     ("execute workflow now", True),
+    ("ok now bult the folder strucher for this site", True),
+    ("start the reserch and give me a blue print files", True),
+    ("create the food website project", True),
     ("debug the project", True),
     ("please fix the bug in auth", True),
     ("can you fix the code in main.py", True),

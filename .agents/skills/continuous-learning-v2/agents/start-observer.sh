@@ -38,9 +38,9 @@ PYTHON_CMD="${CLV2_PYTHON_CMD:-}"
 # shellcheck disable=SC1091
 . "${SKILL_ROOT}/scripts/lib/homunculus-dir.sh"
 CONFIG_DIR="$(_clv2_resolve_homunculus_dir)"
-if [ -n "${CLV2_CONFIG:-}" ]; then
+if [[ -n "${CLV2_CONFIG:-}" ]]; then
   CONFIG_FILE="$CLV2_CONFIG"
-elif [ -f "${CONFIG_DIR}/config.json" ]; then
+elif [[ -f "${CONFIG_DIR}/config.json" ]]; then
   CONFIG_FILE="${CONFIG_DIR}/config.json"
 else
   CONFIG_FILE="${SKILL_ROOT}/config.json"
@@ -57,7 +57,7 @@ write_guard_sentinel() {
 }
 
 stop_observer_if_running() {
-  if [ -f "$PID_FILE" ]; then
+  if [[ -f "$PID_FILE" ]]; then
     pid=$(cat "$PID_FILE")
     if kill -0 "$pid" 2>/dev/null; then
       echo "Stopping observer for ${PROJECT_NAME} (PID: $pid)..."
@@ -80,8 +80,8 @@ stop_observer_if_running() {
 OBSERVER_INTERVAL_MINUTES=5
 MIN_OBSERVATIONS=20
 OBSERVER_ENABLED=false
-if [ -f "$CONFIG_FILE" ]; then
-  if [ -z "$PYTHON_CMD" ]; then
+if [[ -f "$CONFIG_FILE" ]]; then
+  if [[ -z "$PYTHON_CMD" ]]; then
     echo "No python interpreter found; using built-in observer defaults." >&2
   else
     _config=$(CLV2_CONFIG="$CONFIG_FILE" "$PYTHON_CMD" -c "
@@ -98,13 +98,13 @@ false")
     _interval=$(echo "$_config" | sed -n '1p')
     _min_obs=$(echo "$_config" | sed -n '2p')
     _enabled=$(echo "$_config" | sed -n '3p')
-    if [ "$_interval" -gt 0 ] 2>/dev/null; then
+    if [[ "$_interval" -gt 0 ]] 2>/dev/null; then
       OBSERVER_INTERVAL_MINUTES="$_interval"
     fi
-    if [ "$_min_obs" -gt 0 ] 2>/dev/null; then
+    if [[ "$_min_obs" -gt 0 ]] 2>/dev/null; then
       MIN_OBSERVATIONS="$_min_obs"
     fi
-    if [ "$_enabled" = "true" ]; then
+    if [[ "$_enabled" = "true" ]]; then
       OBSERVER_ENABLED=true
     fi
   fi
@@ -139,7 +139,7 @@ for arg in "$@"; do
   esac
 done
 
-if [ "$RESET_OBSERVER" = "true" ]; then
+if [[ "$RESET_OBSERVER" = "true" ]]; then
   rm -f "$SENTINEL_FILE"
 fi
 
@@ -150,7 +150,7 @@ case "$ACTION" in
     ;;
 
   status)
-    if [ -f "$PID_FILE" ]; then
+    if [[ -f "$PID_FILE" ]]; then
       pid=$(cat "$PID_FILE")
       if kill -0 "$pid" 2>/dev/null; then
         echo "Observer is running (PID: $pid)"
@@ -173,14 +173,14 @@ case "$ACTION" in
 
   start)
     # Check if observer is disabled in config
-    if [ "$OBSERVER_ENABLED" != "true" ]; then
+    if [[ "$OBSERVER_ENABLED" != "true" ]]; then
       echo "Observer is disabled in config.json (observer.enabled: false)."
       echo "Set observer.enabled to true in config.json to enable."
       exit 1
     fi
 
     # Check if already running
-    if [ -f "$PID_FILE" ]; then
+    if [[ -f "$PID_FILE" ]]; then
       pid=$(cat "$PID_FILE")
       if kill -0 "$pid" 2>/dev/null; then
         echo "Observer already running for ${PROJECT_NAME} (PID: $pid)"
@@ -191,7 +191,7 @@ case "$ACTION" in
 
     echo "Starting observer agent for ${PROJECT_NAME}..."
 
-    if [ ! -x "$OBSERVER_LOOP_SCRIPT" ]; then
+    if [[ ! -x "$OBSERVER_LOOP_SCRIPT" ]]; then
       echo "Observer loop script not found or not executable: $OBSERVER_LOOP_SCRIPT"
       exit 1
     fi
@@ -230,7 +230,7 @@ case "$ACTION" in
       exit 2
     fi
 
-    if [ -f "$PID_FILE" ]; then
+    if [[ -f "$PID_FILE" ]]; then
       pid=$(cat "$PID_FILE")
       if kill -0 "$pid" 2>/dev/null; then
         echo "Observer started (PID: $pid)"

@@ -32,6 +32,7 @@ class EventBus:
     _subscribers: dict[EventType, list[EventHandler]] = field(default_factory=dict)
     _wildcard_subscribers: list[EventHandler] = field(default_factory=list)
     _dispatcher_task: asyncio.Task[None] | None = None
+    _active_tasks: set[asyncio.Task[None]] = field(default_factory=set, init=False)
     _running: bool = False
     _publishing_notification: bool = False
     _logger: logging.Logger = field(init=False, repr=False)
@@ -51,13 +52,28 @@ class EventBus:
         self._logger.info("event_bus_started")
 
     async def stop(self) -> None:
+        if not self._running:
+            return
+        if not self._queue.empty():
+            try:
+                await asyncio.wait_for(self.drain(), timeout=5.0)
+            except (TimeoutError, asyncio.TimeoutError):
+                self._logger.warning("event_bus_drain_timed_out_on_stop")
         self._running = False
         if self._dispatcher_task is not None:
             self._dispatcher_task.cancel()
             try:
                 await self._dispatcher_task
             except asyncio.CancelledError:
+                # Awaiting a task we cancelled raises here. Anything else is our
+                # own cancellation and must propagate, not be swallowed.
+                if not self._dispatcher_task.cancelled():
+                    raise
                 self._logger.info("event_bus_dispatch_stopped")
+        if self._active_tasks:
+            done, pending = await asyncio.wait(list(self._active_tasks), timeout=5.0)
+            for t in pending:
+                t.cancel()
         self._logger.info("event_bus_stopped")
 
     def subscribe(self, event_type: EventType, handler: EventHandler) -> None:
@@ -85,24 +101,28 @@ class EventBus:
 
     async def publish(self, event: object) -> None:
         if not self._running:
-            raise RuntimeError("EventBus must be started before publishing events.")
+            raise RuntimeError("EventBus is not running (never started or already stopped).")
         if not self._validate_event_boundary(event):
             return
         if self._should_drop_for_backpressure(event):
-            self._record_backpressure_drop(event)
-            return
+            # Yield to let dispatcher process before dropping
+            await asyncio.sleep(0)
+            if self._should_drop_for_backpressure(event):
+                self._record_backpressure_drop(event)
+                return
         try:
             await asyncio.wait_for(
                 self._queue.put(event),
                 timeout=self.handler_timeout_seconds,
             )
             event.transition(EventState.QUEUED)
+            await asyncio.sleep(0)
         except (TimeoutError, asyncio.TimeoutError):
             self._record_backpressure_drop(event)
 
     async def publish_raw_for_validation(self, raw_event: object) -> None:
         if not self._running:
-            raise RuntimeError("EventBus must be started before publishing events.")
+            raise RuntimeError("EventBus is not running (never started or already stopped).")
         await self.publish(raw_event)
 
     async def publish_nowait_safe(self, event: object) -> bool:
@@ -128,7 +148,10 @@ class EventBus:
 
     async def _dispatch_loop(self) -> None:
         while self._running:
-            event = await self._queue.get()
+            try:
+                event = await self._queue.get()
+            except asyncio.CancelledError:
+                raise
             if self.metrics is not None:
                 self.metrics.queue_depth = self._queue.qsize()
             event_age_seconds = (datetime.now(UTC) - event.created_at).total_seconds()
@@ -147,6 +170,10 @@ class EventBus:
                 self._queue.task_done()
                 continue
             
+            await self._dispatch_event(event)
+
+    async def _dispatch_event(self, event: Event) -> None:
+        try:
             event.transition(EventState.PROCESSING)
             if self.metrics is not None:
                 self.metrics.record_turn_event(
@@ -177,7 +204,6 @@ class EventBus:
                     )
                 except asyncio.CancelledError:
                     event.transition(EventState.FAILED)
-                    self._queue.task_done()
                     raise
                 except Exception:
                     event_failed = True
@@ -199,13 +225,15 @@ class EventBus:
                 event.transition(EventState.FAILED)
             else:
                 event.transition(EventState.COMPLETED)
-                
+        finally:
             self._queue.task_done()
             if self.metrics is not None:
                 self.metrics.queue_depth = self._queue.qsize()
 
     async def drain(self) -> None:
         await self._queue.join()
+        if self._active_tasks:
+            await asyncio.gather(*list(self._active_tasks), return_exceptions=True)
 
     @property
     def queue_depth(self) -> int:

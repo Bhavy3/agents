@@ -21,7 +21,7 @@ from core.memory.explicit_requests import (
     extract_explicit_memory_content,
 )
 from core.router.adaptive_router import AdaptiveRouter
-from core.router.rules import Intent, IntentName
+from core.router.rules import Intent, IntentName, route_by_rules
 
 
 SYSTEM_PROMPT = """You are the reasoning module for FRIDAY.
@@ -270,6 +270,17 @@ class LlmFallbackRouter:
         return f"{prompt}\n{personality_instructions}\n\nHistory:\n{history}\n\nUser Input: {text}\n\nJSON:"
 
     def _fallback(self, text: str) -> Intent:
+        # A model outage must not erase a command that the local rule engine
+        # can execute safely. This keeps known actions working during restart
+        # or model escalation.
+        deterministic_intent = route_by_rules(text)
+        if deterministic_intent is not None:
+            return Intent(
+                name=deterministic_intent.name,
+                confidence=deterministic_intent.confidence,
+                parameters=deterministic_intent.parameters,
+                source="rules_fallback",
+            )
         return Intent(name=IntentName.CHAT, confidence=0.1, parameters={"response_text": "I encountered an error trying to process that. Could you try again?"}, source="llm_fallback_error")
 
     async def _emit(self, event_type: EventType, payload: dict, correlation_id: str | None) -> None:

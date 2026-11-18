@@ -9,12 +9,12 @@ OLD="${HOME}/.claude/homunculus"
 . "$(dirname "$0")/lib/homunculus-dir.sh"
 NEW="$(_clv2_resolve_homunculus_dir)"
 
-if [ "$NEW" = "$OLD" ]; then
+if [[ "$NEW" = "$OLD" ]]; then
   echo "Resolved destination equals source ($OLD); nothing to migrate."
   exit 0
 fi
 
-if [ ! -d "$OLD" ]; then
+if [[ ! -d "$OLD" ]]; then
   echo "Nothing to migrate (no $OLD)."
   exit 0
 fi
@@ -37,10 +37,10 @@ fi
 
 mkdir -p "$(dirname "$NEW")"
 
-if [ ! -d "$NEW" ]; then
+if [[ ! -d "$NEW" ]]; then
   mv "$OLD" "$NEW"
   echo "Moved $OLD -> $NEW"
-elif [ -z "$(ls -A "$NEW" 2>/dev/null || true)" ]; then
+elif [[ -z "$(ls -A "$NEW" 2>/dev/null || true)" ]]; then
   rmdir "$NEW"
   mv "$OLD" "$NEW"
   echo "Moved $OLD -> $NEW (replaced empty destination)"
@@ -55,7 +55,7 @@ else
 fi
 
 settings="${HOME}/.claude/settings.json"
-if [ -f "$settings" ] && grep -q '"CLV2_CONFIG"' "$settings" 2>/dev/null; then
+if [[ -f "$settings" ]] && grep -q '"CLV2_CONFIG"' "$settings" 2>/dev/null; then
   if grep -q '\.claude/homunculus' "$settings" 2>/dev/null; then
     cat >&2 <<WARN
 

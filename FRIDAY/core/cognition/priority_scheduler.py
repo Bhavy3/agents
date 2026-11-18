@@ -4,6 +4,7 @@ import heapq
 from dataclasses import dataclass, field
 from typing import Any, Callable, Coroutine
 from core.cognition.attention_manager import AttentionPriority
+from core.asyncio_utils import spawn_background
 
 @dataclass(order=True)
 class PrioritizedTask:
@@ -52,5 +53,5 @@ class PriorityScheduler:
         while self._running:
             if self._queue:
                 p_task = heapq.heappop(self._queue)
-                asyncio.create_task(p_task.coro)
+                spawn_background(p_task.coro)
             await asyncio.sleep(0.01)

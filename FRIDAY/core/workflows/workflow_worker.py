@@ -21,13 +21,18 @@ class WorkflowWorker(BaseWorker):
             self.store = store
         else:
             store_path = os.getenv("FRIDAY_WORKFLOW_STORE_PATH")
-            self.store = WorkflowStore(store_path) if store_path else WorkflowStore()
+            self.store = (
+                WorkflowStore(store_path)
+                if store_path
+                else WorkflowStore("data/workflows/active_workflows.sqlite3")
+            )
         self._retry_tasks: dict[str, asyncio.Task] = {}
         self._startup_recovery_done = False
         self._recovered_workflow_ids: set[str] = set()
         
         # Load any existing workflows from store on startup
         self.engine.active_workflows = self.store.load_workflows()
+        self._persisted_startup_workflow_ids: set[str] = set(self.engine.active_workflows.keys())
 
         self.event_bus.subscribe(EventType.ACTION_COMPLETED, self.handle_action_completed)
         self.event_bus.subscribe(EventType.ACTION_FAILED, self.handle_action_failed)
@@ -80,6 +85,8 @@ class WorkflowWorker(BaseWorker):
         self._startup_recovery_done = True
 
         for workflow in list(self.engine.active_workflows.values()):
+            if workflow.id not in self._persisted_startup_workflow_ids:
+                continue
             if workflow.id in self._recovered_workflow_ids:
                 continue
             if workflow.status not in (WorkflowStatus.RUNNING, WorkflowStatus.RECOVERING):
@@ -166,7 +173,7 @@ class WorkflowWorker(BaseWorker):
 
         if in_flight:
             step = in_flight[0]
-            if not self.recovery.is_idempotent(step.intent):
+            if not self.recovery.is_retry_safe(step.intent):
                 await self.engine.fail_workflow_for_recovery(
                     workflow,
                     (
@@ -224,7 +231,7 @@ class WorkflowWorker(BaseWorker):
             return
 
         if workflow.status == WorkflowStatus.RECOVERING and pending is not None:
-            if not self.recovery.is_idempotent(pending.intent):
+            if not self.recovery.is_retry_safe(pending.intent):
                 await self.engine.fail_workflow_for_recovery(
                     workflow,
                     (

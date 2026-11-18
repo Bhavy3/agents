@@ -1,6 +1,7 @@
 """Adaptive Intelligence Router: 3B vs 7B routing decisions based on complexity and latency budget."""
 
 import logging
+import os
 from typing import Any, Tuple
 
 from core.router.complexity_detector import detect_query_complexity
@@ -11,8 +12,21 @@ INTERACTIVE_COMPLEXITY_LATENCY_CAP_SECONDS = 12.0
 
 
 class AdaptiveRouter:
+    MODEL_PIN_ENV = "FRIDAY_LLM_PIN"
+
     def __init__(self, model_manager: Any = None):
         self.model_manager = model_manager
+
+    def _pinned_model(self) -> str | None:
+        """Return the model the user pinned, or None when routing is free.
+
+        Model size is the user's choice, not an inference the router should
+        make from query length.  A pin disables escalation entirely.
+        """
+        value = (os.getenv(self.MODEL_PIN_ENV) or "").strip().lower()
+        if value in ("3b", "7b"):
+            return value
+        return None
 
     def _seven_b_is_warm(self) -> bool:
         """Return whether escalation can avoid a model cold-start penalty."""
@@ -35,6 +49,9 @@ class AdaptiveRouter:
 
     async def decide_model(self, utterance: str) -> Tuple[str, str]:
         """Decide 3B vs 7B. Returns (model, reason)."""
+        pinned = self._pinned_model()
+        if pinned is not None:
+            return (pinned, "pinned_by_user")
         complexity = detect_query_complexity(utterance)
         latency_budget = infer_latency_budget(utterance)
 

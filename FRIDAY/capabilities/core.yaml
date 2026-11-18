@@ -1,0 +1,270 @@
+# Kernel capability contracts.
+#
+# `covers` is a controlled vocabulary (see COVERAGE_TOKENS in capability.py) and
+# states which data domains a tool ACTUALLY reaches. It is machine-readable on
+# purpose: grounding refuses a private-data request when no capability declares
+# that domain, and prose is never used to infer access.
+#
+# risk / verify / retry_safe are enforced progressively; verify and retry_safe
+# are live today for file_exists and exit_code.
+
+# --- public web (not private data) -----------------------------------------
+open_url:
+  description: >-
+    Open a URL in the user's default browser for the user to look at. Does not
+    read or return page content. Public web only.
+  risk: SAFE
+  covers: [public_web]
+  params:
+    url: {type: string, required: true}
+  retry_safe: false
+  idempotency: "open_url:{url}"
+
+search_web:
+  description: >-
+    Search the PUBLIC web and return short text snippets. Never returns the
+    user's private data: not email, not messages, not local files.
+  risk: SAFE
+  covers: [public_web]
+  params:
+    query: {type: string, required: true}
+  verify: {type: none}
+  retry_safe: true
+  idempotency: "search_web:{query}"
+
+research_web:
+  description: >-
+    Research a question on the PUBLIC web and synthesize an answer with sources.
+    Strictly public web. Cannot read the user's email, inbox or private accounts.
+  risk: SAFE
+  covers: [public_web]
+  params:
+    query: {type: string, required: true}
+  verify: {type: none}
+  retry_safe: true
+  idempotency: "research_web:{query}"
+
+open_section:
+  description: >-
+    Open one named section of a page already loaded in the browser. Public web
+    only; requires an existing browser session.
+  risk: SAFE
+  covers: [public_web, browser_session]
+
+# --- filesystem (workspace-confined) ---------------------------------------
+list_dir:
+  description: >-
+    List the entries of a directory inside the workspace. Read-only.
+  risk: SAFE
+  covers: [workspace_files]
+  retry_safe: true
+
+read_text_file:
+  description: >-
+    Read a UTF-8 text file inside the workspace and return its contents.
+    Read-only. Cannot read system files outside the workspace.
+  risk: SAFE
+  covers: [workspace_files]
+  params:
+    file_path: {type: string, required: true}
+  retry_safe: true
+  idempotency: "read_text_file:{file_path}"
+
+write_text_file:
+  description: >-
+    Create or overwrite a text file inside the workspace. Parent directories are
+    created automatically. This is how project and website source files are
+    written; prefer it over browser or desktop steps for file generation.
+  risk: RESTRICTED
+  covers: [workspace_files]
+  params:
+    file_path: {type: string, required: true}
+    content: {type: string, required: true}
+  verify: {type: file_exists, expect: file_path, description: the file exists after the write}
+  retry_safe: false
+  idempotency: "write_text_file:{file_path}"
+
+search_files:
+  description: >-
+    Search file contents or names inside the workspace and return matches.
+    Read-only; cannot search outside the workspace.
+  risk: SAFE
+  covers: [workspace_files]
+  retry_safe: true
+
+# --- desktop: window/input primitives --------------------------------------
+launch_app:
+  description: >-
+    Launch an installed desktop application by name on this computer.
+  risk: RESTRICTED
+  covers: [desktop_apps]
+
+press_key:
+  description: >-
+    Send a single key press to the focused window.
+  risk: RESTRICTED
+  covers: [desktop_apps]
+
+keyboard_shortcut:
+  description: >-
+    Send a keyboard shortcut such as ctrl+s to the focused window.
+  risk: RESTRICTED
+  covers: [desktop_apps]
+
+move_mouse_to:
+  description: >-
+    Move the mouse pointer to absolute screen coordinates. Blind positioning;
+    prefer accessibility refs when available.
+  risk: RESTRICTED
+  covers: [desktop_apps]
+
+# --- memory and clock -------------------------------------------------------
+remember:
+  description: >-
+    Persist one short fact the user explicitly asked to remember. Do not use it
+    unless the user explicitly requested saving something.
+  risk: RESTRICTED
+  covers: [user_memory]
+
+memory_recall:
+  description: >-
+    Search and recall saved memories, learned facts, preferences, and notes.
+  risk: SAFE
+  covers: [user_memory]
+  retry_safe: true
+  params:
+    query:
+      type: string
+      required: true
+      description: Search keywords or topic to recall from memory.
+
+get_time:
+  description: >-
+    Return the current local date and time. Use only when the answer depends on
+    the clock; never as a filler step.
+  risk: SAFE
+  covers: [clock]
+  retry_safe: true
+
+# --- shell ------------------------------------------------------------------
+execute_shell:
+  description: >-
+    Run a shell command in the workspace. The universal escape hatch for
+    installing, running and decoding things. Never receives substituted output
+    from other steps in the command text.
+  risk: DANGEROUS
+  covers: [local_system, workspace_files]
+  params:
+    command: {type: string, required: true}
+    directory: {type: string, required: false}
+    timeout_seconds: {type: number, required: false}
+  verify: {type: exit_code, expect: 0, description: command exits successfully}
+  retry_safe: false
+  idempotency: "execute_shell:{command}"
+
+# --- native app control via accessibility tree -----------------------------
+desktop_list_apps:
+  description: >-
+    List desktop applications that may be controlled, as permitted by the
+    configured allowlist. Read-only.
+  risk: SAFE
+  covers: [desktop_apps]
+  retry_safe: true
+
+desktop_snapshot:
+  description: >-
+    Read a native app's accessibility tree and return addressable element refs.
+    Must be called before clicking or typing. Read-only.
+  risk: SAFE
+  covers: [desktop_apps]
+  params:
+    app: {type: string, required: true}
+  retry_safe: true
+
+desktop_find:
+  description: >-
+    Find an element inside a native app's accessibility tree by text. Read-only.
+  risk: SAFE
+  covers: [desktop_apps]
+  params:
+    app: {type: string, required: true}
+    text: {type: string, required: true}
+  retry_safe: true
+
+desktop_click:
+  description: >-
+    Click an element in a native app by ref from a previous desktop_snapshot.
+    Refs go stale; re-snapshot before retrying.
+  risk: RESTRICTED
+  covers: [desktop_apps]
+  params:
+    ref: {type: string, required: true}
+  retry_safe: false
+
+desktop_type:
+  description: >-
+    Type text into an element of a native app by ref from a desktop_snapshot.
+  risk: RESTRICTED
+  covers: [desktop_apps]
+  params:
+    ref: {type: string, required: true}
+    text: {type: string, required: true}
+  retry_safe: false
+
+desktop_launch:
+  description: >-
+    Launch a desktop app through the agent-desktop runtime, subject to the
+    configured app allowlist.
+  risk: RESTRICTED
+  covers: [desktop_apps]
+  params:
+    app: {type: string, required: true}
+  retry_safe: false
+
+# --- web automation via DOM ------------------------------------------------
+browser_open:
+  description: >-
+    Open a URL in a controlled browser and load the page. Use for interactive
+    websites and for verifying a locally served site.
+  risk: RESTRICTED
+  covers: [public_web, browser_session]
+  params:
+    url: {type: string, required: true}
+  verify: {type: http_ok, description: the page responds and loads}
+  retry_safe: false
+  idempotency: "browser_open:{url}"
+
+browser_snapshot:
+  description: >-
+    Return the current page's accessible DOM with element refs. Read-only.
+    Must be called before clicking or typing.
+  risk: SAFE
+  covers: [public_web, browser_session]
+  retry_safe: true
+
+browser_click:
+  description: >-
+    Click a page element by CSS selector or ref from a snapshot.
+  risk: RESTRICTED
+  covers: [public_web, browser_session]
+  params:
+    selector: {type: string, required: true}
+  retry_safe: false
+  idempotency: "browser_click:{selector}"
+
+browser_type:
+  description: >-
+    Type text into a page input by CSS selector or ref from a snapshot.
+  risk: RESTRICTED
+  covers: [public_web, browser_session]
+  params:
+    selector: {type: string, required: true}
+    text: {type: string, required: true}
+  retry_safe: false
+
+browser_close:
+  description: >-
+    Close the controlled browser session and release its resources.
+  risk: SAFE
+  covers: [browser_session]
+  retry_safe: true

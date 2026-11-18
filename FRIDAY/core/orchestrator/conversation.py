@@ -103,6 +103,7 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
         self._routing_task: asyncio.Task | None = None
         self._turn_start_pending = False
         self._queued_cli_turns: deque[tuple[str, str | None]] = deque()
+        self._turn_tasks: set[asyncio.Task] = set()
         self._pending_workflow_correlations: set[str] = set()
         self._last_activity_time = time.perf_counter()
         
@@ -155,6 +156,7 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
         """Cancel turn-owned background work before the shared client closes."""
         tasks = list(self._web_search_answer_tasks.values())
         tasks.extend(self._web_search_ack_tasks.values())
+        tasks.extend(self._turn_tasks)
         if self._routing_task is not None:
             tasks.append(self._routing_task)
         for task in tasks:
@@ -164,6 +166,7 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
             await asyncio.gather(*tasks, return_exceptions=True)
         self._web_search_answer_tasks.clear()
         self._web_search_ack_tasks.clear()
+        self._turn_tasks.clear()
         self._routing_task = None
         await super().stop()
 
@@ -191,7 +194,7 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
                 return
             text, correlation_id = self._queued_cli_turns.popleft()
             self._turn_start_pending = True
-        asyncio.create_task(self._initiate_turn(text, correlation_id, typed_input=True))
+        self._spawn_turn_task(self._initiate_turn(text, correlation_id, typed_input=True))
 
 
 
@@ -330,7 +333,19 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
             if self._turn_start_pending:
                 return
             self._turn_start_pending = True
-        asyncio.create_task(self._initiate_turn(text, correlation_id, voice_input=voice_input))
+        self._spawn_turn_task(self._initiate_turn(text, correlation_id, voice_input=voice_input))
+
+    def _spawn_turn_task(self, coro) -> None:
+        """Track fire-and-forget turn tasks so stop() can cancel them before the bus closes."""
+        task = asyncio.create_task(coro)
+        self._turn_tasks.add(task)
+        task.add_done_callback(self._turn_tasks.discard)
+
+    async def _publish_safe(self, event: Event) -> None:
+        """Drop lifecycle publishes when the bus is already stopped instead of raising."""
+        if not getattr(self.event_bus, "_running", False):
+            return
+        await self.event_bus.publish(event)
 
     async def _initiate_turn(
         self,
@@ -364,9 +379,9 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
             correlation_id,
         )
         await self.cognitive_state.apply_event(turn_started)
-        await self.event_bus.publish(turn_started)
-        
-        await self.event_bus.publish(
+        await self._publish_safe(turn_started)
+
+        await self._publish_safe(
             Event.create(
                 EventType.USER_MESSAGE_RECEIVED,
                 {"turn_id": turn_id, "text": text},
@@ -376,7 +391,7 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
         )
 
         if memory_content:
-            await self.event_bus.publish(Event.create(
+            await self._publish_safe(Event.create(
                 EventType.MEMORY_WRITE_REQUEST,
                 {
                     "type": "approved_fact",
@@ -387,11 +402,11 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
                 self.name,
                 correlation_id,
             ))
-        
+
         # Human presence: Acknowledgment
         ack = self.presence.get_acknowledgment(self.current_style, self.enable_presence_ack)
         if ack:
-            await self.event_bus.publish(
+            await self._publish_safe(
                 Event.create(
                     EventType.ASSISTANT_RESPONSE_PARTIAL,
                     {"turn_id": turn_id, "text": ack + " "},
@@ -468,6 +483,7 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
     ) -> None:
         start_time = time.perf_counter()
         deferred_web_search: str | None = None
+        routing_cancelled = False
         try:
             if voice_input:
                 ready = await self.response_gate.wait_for_readiness(
@@ -498,8 +514,6 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
                 ))
                 return
 
-            fast_intent = fast_chat_intent(text) if typed_input else None
-
             # Generate personality instructions
             base_instructions = self.injector.get_style_instructions(self.current_style, self.current_mode)
             tone_ctx = tone_context if tone_context is not None else self.cognitive_state.get_tone_context()
@@ -507,11 +521,37 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
                 delivery_instructions = f"{tone_ctx}\n\n{base_instructions}"
             else:
                 delivery_instructions = base_instructions
-            # General chat has no explicit memory or action signal. Avoid a
-            # serialized memory round-trip on this latency-sensitive path;
-            # memory-bearing and dynamic requests retain the normal lookup.
-            mem_ctx = "" if fast_intent is not None else await self._request_memory_context(text)
-                
+
+            # Evaluate personal memory query first with clean fall-through
+            intent: Intent | None = None
+            if is_personal_memory_query(text):
+                mem_ctx = await self._request_memory_context(text)
+                personal_memory = next(
+                    (line.removeprefix("- ").strip() for line in mem_ctx.splitlines() if line.strip()),
+                    "",
+                )
+                if personal_memory:
+                    intent = Intent(
+                        IntentName.CHAT,
+                        1.0,
+                        {"response_text": f"You told me: {personal_memory}"},
+                        source="personal_memory",
+                    )
+                else:
+                    # Clean fall-through: no matching saved fact exists; do not claim memory
+                    mem_ctx = ""
+            else:
+                fast_intent = fast_chat_intent(text) if typed_input else None
+                if fast_intent is not None:
+                    intent = fast_intent
+                    mem_ctx = ""
+                elif _WORKFLOW_REQUEST.search(text):
+                    # Project/build requests are already task-shaped. Avoid
+                    # an unrelated memory round-trip before the planner runs.
+                    mem_ctx = ""
+                else:
+                    mem_ctx = await self._request_memory_context(text)
+
             # Emotional context may shape the answer, but must not steer the
             # intent classifier's choice of tools or actions.
             router_instructions = base_instructions
@@ -519,21 +559,12 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
             if mem_ctx:
                 chat_instructions += f"\n\nSystem Memory/Context:\n{mem_ctx}"
 
-            personal_memory = next(
-                (line.removeprefix("- ").strip() for line in mem_ctx.splitlines() if line.strip()),
-                "",
-            )
-            if fast_intent is not None:
-                intent = fast_intent
-            elif is_personal_memory_query(text) and personal_memory:
-                intent = Intent(
-                    IntentName.CHAT,
-                    1.0,
-                    {"response_text": f"You told me: {personal_memory}"},
-                    source="personal_memory",
-                )
-            else:
-                intent = None
+            # A request for private data that no capability reaches must be
+            # refused honestly, not answered from the model's imagination.
+            if intent is None and await self._try_refuse_uncovered_capability(
+                text, turn_id, correlation_id, start_time
+            ):
+                return
 
             if intent is None and await self._try_start_workflow(text, turn_id, correlation_id, start_time):
                 return
@@ -593,11 +624,16 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
                 # classify it and then asking the same LLM to answer it.
                 if intent.source == FAST_CHAT_SOURCE:
                     response_text = await self.streaming_worker.stream_reasoning(
-                        self._build_fast_chat_prompt(text, tone_ctx),
+                        self._build_fast_chat_prompt(text, tone_ctx, base_instructions),
                         correlation_id,
                     )
                 else:
-                    response_text = intent.parameters.get("response_text", intent.parameters.get("text", ""))
+                    response_text = intent.parameters.get("response_text", intent.parameters.get("text", intent.parameters.get("content", "")))
+                if not response_text and self.streaming_worker:
+                    response_text = await self.streaming_worker.stream_reasoning(
+                        self._build_fast_chat_prompt(text, tone_ctx, base_instructions),
+                        correlation_id,
+                    )
                 if response_text:
                     async with self._state_lock:
                         if self.active_turn_id == turn_id:
@@ -662,8 +698,12 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
                     )
                 )
         except asyncio.CancelledError:
+            routing_cancelled = True
             self.logger.info("routing_cancelled", extra={"turn_id": turn_id})
-            # Cancellation is handled in _handle_speech_started
+            # State is handled in _handle_speech_started and the finally block
+            # still clears the turn; the cancellation then propagates instead
+            # of being reported as a normal completion.
+            raise
         except Exception:
             self.logger.exception("routing_failed", extra={"turn_id": turn_id})
             if deferred_web_search is not None:
@@ -680,7 +720,8 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
                         if self.active_speaker == "assistant":
                             self.active_speaker = None
                         start_next_cli_turn = True
-            if start_next_cli_turn:
+            if start_next_cli_turn and not routing_cancelled:
+                # A cancelled turn must not spawn follow-up turns during teardown.
                 await self._start_next_cli_turn()
 
     @staticmethod
@@ -702,11 +743,19 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
         return context_str.strip()
 
     @staticmethod
-    def _build_fast_chat_prompt(text: str, tone_context: str | None) -> str:
+    def _build_fast_chat_prompt(
+        text: str,
+        tone_context: str | None,
+        personality_instructions: str = "",
+    ) -> str:
         """Build a compact typed-chat prompt to reduce first-token latency."""
         tone = f"{tone_context}\n\n" if tone_context else ""
+        personality = f"{personality_instructions}\n\n" if personality_instructions else ""
+        from core.router.arithmetic import evaluate_arithmetic
+        calc = evaluate_arithmetic(text)
+        calc_hint = f"Calculation reference: {calc}\n" if calc else ""
         return (
-            f"{tone}Answer accurately and concisely. Do not claim to remember information "
+            f"{tone}{personality}{calc_hint}Answer accurately and concisely. Do not claim to remember information "
             "unless the user explicitly asks you to remember it.\n"
             f"User: {text}\nResponse:"
         ).strip()
@@ -917,3 +966,4 @@ class OrchestratorWorker(BaseWorker, WebSearchMixin, MemoryContextMixin, Workflo
                         
         except asyncio.CancelledError:
             self.logger.info("workflow_timeout_monitor_stopped")
+            raise

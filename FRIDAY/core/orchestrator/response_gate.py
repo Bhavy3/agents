@@ -41,6 +41,8 @@ class ResponseReadinessGate:
             return True
         except asyncio.CancelledError:
             self.logger.debug("readiness_wait_cancelled", extra={"turn_id": turn_id})
+            if not task.cancelled():
+                raise
             return False
         finally:
             self._gate_tasks.pop(turn_id, None)

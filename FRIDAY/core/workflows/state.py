@@ -5,9 +5,13 @@ from typing import Any, Optional
 
 class WorkflowStatus(StrEnum):
     PENDING = "pending"
+    PLANNING = "planning"
     RUNNING = "running"
+    VERIFYING = "verifying"
     WAITING_CONFIRMATION = "waiting_confirmation"
     RECOVERING = "recovering"
+    RETRYING = "retrying"
+    BLOCKED = "blocked"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"

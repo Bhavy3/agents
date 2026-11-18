@@ -115,7 +115,14 @@ class LocalLLMClient:
     def _ollama_generate_url(self) -> str:
         return f"{self.base_url}/api/generate"
 
-    def _chat_payload(self, prompt: str, *, stream: bool, max_tokens_override: int | None = None) -> dict[str, Any]:
+    def _chat_payload(
+        self,
+        prompt: str,
+        *,
+        stream: bool,
+        max_tokens_override: int | None = None,
+        response_format: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "messages": [{"role": "user", "content": prompt}],
             "temperature": self.temperature,
@@ -124,9 +131,18 @@ class LocalLLMClient:
         }
         if self.model:
             payload["model"] = self.model
+        if response_format is not None:
+            payload["response_format"] = response_format
         return payload
 
-    def _ollama_payload(self, prompt: str, *, stream: bool, max_tokens_override: int | None = None) -> dict[str, Any]:
+    def _ollama_payload(
+        self,
+        prompt: str,
+        *,
+        stream: bool,
+        max_tokens_override: int | None = None,
+        response_format: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": self.model,
             "prompt": prompt,
@@ -134,6 +150,8 @@ class LocalLLMClient:
         }
         if max_tokens_override is not None:
             payload["options"] = {"num_predict": max_tokens_override}
+        if response_format is not None:
+            payload["format"] = "json"
         return payload
 
     async def health_check(self) -> bool:
@@ -176,7 +194,12 @@ class LocalLLMClient:
         )
         return bool(self._available)
 
-    async def generate(self, prompt: str, max_tokens: int | None = None) -> tuple[str | None, LlmRequestMetrics]:
+    async def generate(
+        self,
+        prompt: str,
+        max_tokens: int | None = None,
+        response_format: dict[str, Any] | None = None,
+    ) -> tuple[str | None, LlmRequestMetrics]:
         started = time.perf_counter()
         last_error: str | None = None
         endpoint = (
@@ -208,7 +231,12 @@ class LocalLLMClient:
                 client = self._get_client()
 
                 if self.provider == LlmProvider.LLAMACPP:
-                    payload = self._chat_payload(prompt, stream=False, max_tokens_override=max_tokens)
+                    payload = self._chat_payload(
+                        prompt,
+                        stream=False,
+                        max_tokens_override=max_tokens,
+                        response_format=response_format,
+                    )
                     response = await client.post(
                         endpoint,
                         json=payload,
@@ -222,7 +250,12 @@ class LocalLLMClient:
                         raw = None
                         last_error = f"HTTP status {response.status_code}"
                 else:
-                    payload = self._ollama_payload(prompt, stream=False, max_tokens_override=max_tokens)
+                    payload = self._ollama_payload(
+                        prompt,
+                        stream=False,
+                        max_tokens_override=max_tokens,
+                        response_format=response_format,
+                    )
                     response = await client.post(
                         endpoint,
                         json=payload,

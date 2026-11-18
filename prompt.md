@@ -498,8 +498,8 @@ You are building:
 a realtime cognitive operating system
 ```
 
-And now â€”
-for the first time â€”
+And now ”
+for the first time”
 
 the foundation is finally strong enough to support it.
 //////

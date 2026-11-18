@@ -31,7 +31,7 @@ LEARNED_SKILLS_PATH="${HOME}/.claude/skills/learned"
 MIN_SESSION_LENGTH=10
 
 # Load config if exists
-if [ -f "$CONFIG_FILE" ]; then
+if [[ -f "$CONFIG_FILE" ]]; then
   if ! command -v jq &>/dev/null; then
     echo "[ContinuousLearning] jq is required to parse config.json but not installed, using defaults" >&2
   else
@@ -47,11 +47,11 @@ mkdir -p "$LEARNED_SKILLS_PATH"
 # Falls back to env var for backwards compatibility
 stdin_data=$(cat)
 transcript_path=$(echo "$stdin_data" | grep -o '"transcript_path":"[^"]*"' | head -1 | cut -d'"' -f4)
-if [ -z "$transcript_path" ]; then
+if [[ -z "$transcript_path" ]]; then
   transcript_path="${CLAUDE_TRANSCRIPT_PATH:-}"
 fi
 
-if [ -z "$transcript_path" ] || [ ! -f "$transcript_path" ]; then
+if [[ -z "$transcript_path" ]] || [[ ! -f "$transcript_path" ]]; then
   exit 0
 fi
 
@@ -59,7 +59,7 @@ fi
 message_count=$(grep -c '"type":"user"' "$transcript_path" 2>/dev/null || echo "0")
 
 # Skip short sessions
-if [ "$message_count" -lt "$MIN_SESSION_LENGTH" ]; then
+if [[ "$message_count" -lt "$MIN_SESSION_LENGTH" ]]; then
   echo "[ContinuousLearning] Session too short ($message_count messages), skipping" >&2
   exit 0
 fi

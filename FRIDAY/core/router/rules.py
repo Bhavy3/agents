@@ -4,6 +4,8 @@ import re
 from dataclasses import dataclass
 from enum import StrEnum
 
+from core.router.arithmetic import evaluate_arithmetic, is_explicit_calculation_command, is_percent_of_question
+
 
 FAST_CHAT_SOURCE = "fast_chat"
 
@@ -84,6 +86,9 @@ def fast_chat_intent(text: str) -> Intent | None:
     normalized = " ".join(text.strip().lower().split())
     if not normalized or len(normalized) > 240:
         return None
+    if is_percent_of_question(text):
+        # Deterministic math answers exactly; leave it to route_by_rules.
+        return None
     small_talk = re.sub(r"[?!.,]+$", "", normalized).strip()
     small_talk = re.sub(r"\bto\s+day\b", "today", small_talk)
     small_talk = re.sub(r"^(?:so|well)\s+", "", small_talk)
@@ -102,6 +107,11 @@ def route_by_rules(text: str) -> Intent | None:
     normalized = " ".join(text.strip().lower().split())
     if not normalized:
         return None
+
+    if is_explicit_calculation_command(text) or is_percent_of_question(text):
+        math_result = evaluate_arithmetic(text)
+        if math_result is not None:
+            return Intent(IntentName.CHAT, 1.0, {"response_text": math_result}, source="deterministic_math")
 
     if re.fullmatch(
         r"(?:what time is it(?: right now)?|what(?:'s| is) (?:the )?(?:local )?time(?: right now)?|"

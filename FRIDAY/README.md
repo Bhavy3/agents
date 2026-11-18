@@ -50,6 +50,59 @@ python -m unittest discover tests
 pytest
 ```
 
+## Execution integrations
+
+FRIDAY's workflow engine now exposes optional execution adapters:
+
+- `execute_shell` runs commands only below `FRIDAY_WORKSPACE_ROOT` and remains
+  confirmation-gated as a dangerous tool.
+- `browser_*` uses Playwright when installed. Install its browser once with
+  `python -m playwright install chromium`.
+- `desktop_*` uses the optional `agent-desktop` executable. Configure the
+  executable and an explicit app allowlist before enabling it:
+
+```powershell
+$env:FRIDAY_WORKSPACE_ROOT = "C:\workspaces"
+$env:FRIDAY_AGENT_DESKTOP_BIN = "agent-desktop"
+$env:FRIDAY_DESKTOP_APPS = "Notepad,Chrome,Settings"
+```
+
+With npm 11, allow the package's native postinstall link explicitly:
+
+```powershell
+npm install -g agent-desktop --allow-scripts=agent-desktop
+```
+
+Active workflow checkpoints use SQLite WAL by default at
+`data/workflows/active_workflows.sqlite3`; set `FRIDAY_WORKFLOW_STORE_PATH` to
+override it. Skills are loaded on demand from `skills/*/SKILL.md` so unrelated
+instructions do not consume the model context.
+
+## Mail watcher (Phase 6 lite)
+
+Optional IMAP inbox monitoring with proactive `📬 New mail from <sender>: <subject>`
+announcements. No new dependencies (stdlib `imaplib`).
+
+Gmail setup:
+
+1. Enable 2-Step Verification, then create an App Password at
+   <https://myaccount.google.com/apppasswords>.
+2. Add credentials to `FRIDAY/.env` (never commit them; `.env` is git-ignored):
+
+   ```ini
+   FRIDAY_MAIL_ENABLED=true
+   FRIDAY_MAIL_USER=you@gmail.com
+   FRIDAY_MAIL_PASSWORD=your_app_password
+   ```
+
+Optional overrides: `FRIDAY_MAIL_IMAP_HOST` (default `imap.gmail.com`) and
+`FRIDAY_MAIL_POLL_INTERVAL_SECONDS` (default `60`).
+
+Behavior: the first successful poll marks the current unread mail as seen
+silently — only mail arriving after FRIDAY starts is announced. Poll failures
+are logged and retried; credentials are never logged. The `mail_watcher`
+worker only starts when enabled and both credentials are set.
+
 ## Runtime Validation
 
 The local llama.cpp launcher and `ModelManager` use `FRIDAY_LLAMA_NGL` as the

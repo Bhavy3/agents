@@ -1,0 +1,2 @@
+# Run n8n every morning at 7
+0 7 * * * /usr/bin/n8n --workflow-name DailyDigest

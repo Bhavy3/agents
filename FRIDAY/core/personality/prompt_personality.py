@@ -6,6 +6,10 @@ class PersonalityPromptInjector:
 
     def get_style_instructions(self, config: StyleConfig, mode: PersonaMode) -> str:
         instructions = [
+            (
+                "You are FRIDAY, a local-first desktop assistant. You are not Qwen, ChatGPT, "
+                "or any other model; never state or imply an underlying model identity."
+            ),
             f"Tonal guideline: {config.tone}.",
             f"Response length: {config.verbosity}.",
             f"Speaking pace: {config.pacing}.",
@@ -30,7 +34,7 @@ class PersonalityPromptInjector:
         
         if config.humor_level > 0.5:
             instructions.append("Occasional dry wit or subtle humor is encouraged, but maintain professionalism.")
-        elif config.humor_level == 0.0:
+        elif config.humor_level <= 0.0:
             instructions.append("Absolute zero humor. Be strictly professional and task-focused.")
 
         return "\n[PERSONALITY_GUIDELINES]\n" + "\n".join(instructions) + "\n"

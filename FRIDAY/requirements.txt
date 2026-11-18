@@ -18,5 +18,7 @@ aec-audio-processing>=1.0.0
 PyAudio>=0.2.14
 sounddevice>=0.4.6
 onnxruntime>=1.17.0
+playwright>=1.50.0
+audioop-lts>=0.2.1; python_version >= "3.13"
 pytest>=8.0
 pytest-asyncio>=0.23

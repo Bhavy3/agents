@@ -24,6 +24,9 @@ class ToolResult:
     output: str
     error: str | None = None
     duration_ms: float = 0.0
+    # Evidence a verifier may check (exit_code, status_code, ...). A tool that
+    # claims success without evidence is treated as unverifiable, not as proven.
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -53,3 +56,5 @@ class ToolAuditEntry:
     duration_ms: float
     correlation_id: str
     error: str | None = None
+    # True/False when the effect was actually checked, None when it could not be.
+    verified: bool | None = None

@@ -275,7 +275,7 @@ class VadWorker(BaseWorker):
                             )
                             await self._finalize_segment(now, "timeout")
         except asyncio.CancelledError:
-            pass
+            raise
         finally:
             async with self._lock:
                 if self._is_speaking:

@@ -1,0 +1,24 @@
+# Declarative capabilities for n8n automation integration
+n8n_create_workflow:
+  description: >-
+    Create an automated multi-step workflow in n8n via its REST API. Use when the user
+    asks to build, create, or automate a workflow in n8n.
+  risk: RESTRICTED
+  covers: [local_system]
+  # n8n answers 201 Created; some proxies answer 200. Both are success.
+  verify: {type: http_ok, expect: [200, 201], description: n8n API accepts the workflow}
+  retry_safe: false
+  idempotency: "n8n_create_workflow:{name}"
+  params:
+    name:
+      type: string
+      required: true
+      description: Name of the workflow to create.
+
+n8n_list_workflows:
+  description: >-
+    List configured workflows from n8n to inspect automation status and workflow IDs.
+  risk: SAFE
+  covers: [local_system]
+  verify: {type: http_ok, expect: 200, description: n8n API returns 200 OK}
+  retry_safe: true

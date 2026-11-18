@@ -62,6 +62,12 @@ class Settings:
     aec_delay_ms: int = 180
     aec_enable_ns: bool = False
     aec_enable_agc: bool = False
+    # Mail watcher (Phase 6 lite). Credentials stay in .env; never logged.
+    mail_watcher_enabled: bool = False
+    mail_imap_host: str = "imap.gmail.com"
+    mail_user: str = ""
+    mail_password: str = ""
+    mail_poll_interval_seconds: float = 60.0
 
     @property
     def data_dir(self) -> Path:
@@ -119,6 +125,15 @@ def load_settings() -> Settings:
     aec_enable_agc_str = os.getenv("FRIDAY_AEC_ENABLE_AGC", "false").lower()
     aec_enable_agc = aec_enable_agc_str == "true"
 
+    mail_poll_interval_str = os.getenv("FRIDAY_MAIL_POLL_INTERVAL_SECONDS")
+    mail_kwargs = {
+        "mail_watcher_enabled": os.getenv("FRIDAY_MAIL_ENABLED", "false").lower() == "true",
+        "mail_imap_host": os.getenv("FRIDAY_MAIL_IMAP_HOST", "imap.gmail.com"),
+        "mail_user": os.getenv("FRIDAY_MAIL_USER", ""),
+        "mail_password": os.getenv("FRIDAY_MAIL_PASSWORD", ""),
+        "mail_poll_interval_seconds": float(mail_poll_interval_str) if mail_poll_interval_str else 60.0,
+    }
+
     if runtime_mode == RuntimeMode.TESTING:
         return Settings(
             root_dir=Path(__file__).resolve().parents[2],
@@ -148,6 +163,7 @@ def load_settings() -> Settings:
             aec_delay_ms=aec_delay_ms,
             aec_enable_ns=aec_enable_ns,
             aec_enable_agc=aec_enable_agc,
+            **mail_kwargs,
         )
     if runtime_mode == RuntimeMode.PRODUCTION:
         return Settings(
@@ -178,6 +194,7 @@ def load_settings() -> Settings:
             aec_delay_ms=aec_delay_ms,
             aec_enable_ns=aec_enable_ns,
             aec_enable_agc=aec_enable_agc,
+            **mail_kwargs,
         )
     return Settings(
         root_dir=Path(__file__).resolve().parents[2],
@@ -196,4 +213,5 @@ def load_settings() -> Settings:
             aec_delay_ms=aec_delay_ms,
             aec_enable_ns=aec_enable_ns,
             aec_enable_agc=aec_enable_agc,
+            **mail_kwargs,
     )

@@ -215,6 +215,7 @@ class ModelManager:
         port: int | None = None,
         base_url: str | None = None,
         timeout_seconds: float | None = None,
+        expected_absent: bool = False,
     ) -> bool:
         """Wait until the target endpoint explicitly reports HTTP 200."""
         if base_url:
@@ -243,11 +244,15 @@ class ModelManager:
                 last_error = exc
 
             if loop.time() >= deadline:
-                logger.warning(
-                    "model_health_check_timed_out",
-                    exc_info=(type(last_error), last_error, last_error.__traceback__) if last_error else None,
-                    extra={"health_url": health_url},
-                )
+                if expected_absent:
+                    # Pre-launch probe: no sidecar on the port yet is the normal case.
+                    logger.info("sidecar_endpoint_not_running", extra={"health_url": health_url})
+                else:
+                    logger.warning(
+                        "model_health_check_timed_out",
+                        exc_info=(type(last_error), last_error, last_error.__traceback__) if last_error else None,
+                        extra={"health_url": health_url},
+                    )
                 return False
             await asyncio.sleep(min(self.health_poll_interval_seconds, deadline - loop.time()))
 
@@ -394,7 +399,7 @@ class ModelManager:
         target_port = self.model_ports[model_name]
         # A missing sidecar should be detected quickly so startup can begin;
         # the longer model-specific timeout is reserved for the process load.
-        healthy = await self._wait_for_health(target_port, target_url, timeout_seconds=1.0)
+        healthy = await self._wait_for_health(target_port, target_url, timeout_seconds=1.0, expected_absent=True)
         if not healthy and model_name == "7b":
             process, error = await self._start_healthy_process(model_name, port=target_port)
             if process is not None:

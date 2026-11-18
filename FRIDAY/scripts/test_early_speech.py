@@ -1,8 +1,13 @@
 """Step 4: VAD early-speech preservation test with real speech synthesis."""
 import asyncio
-import audioop
 import sys
+from pathlib import Path
 import numpy as np
+
+root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(root))
+
+from core.audio.pcm import resample_pcm16
 from piper.voice import PiperVoice
 from silero_vad import load_silero_vad
 
@@ -14,7 +19,7 @@ def synthesize_spoken_word(voice: PiperVoice, word: str) -> np.ndarray:
     raw_pcm_chunks = [chunk.audio_int16_bytes for chunk in voice.synthesize(word)]
     raw_pcm = b"".join(raw_pcm_chunks)
     # Resample from 22050 to 16000
-    resampled, _ = audioop.ratecv(raw_pcm, 2, 1, 22050, 16000, None)
+    resampled, _ = resample_pcm16(raw_pcm, 22050, 16000)
     # Convert int16 to float32
     audio = np.frombuffer(resampled, dtype=np.int16).astype(np.float32) / 32768.0
 

@@ -109,9 +109,12 @@ class RuntimeValidator:
         return report
 
     async def _simulate_commands(self, duration_seconds: float) -> None:
+        import tempfile
+
         commands = [
             "open chrome",
-            "open folder C:\\tmp",
+            # Never point a simulated command at a fixed, world-writable path.
+            f"open folder {tempfile.gettempdir()}",
             "search google for event driven architecture",
             "help",
             "unknown fuzzy request",

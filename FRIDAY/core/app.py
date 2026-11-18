@@ -24,6 +24,7 @@ from core.recovery.recovery_manager import RecoveryManager
 from core.router.intent_router import IntentRouter
 from core.memory.memory_worker import MemoryWorker
 from core.workers.terminal_observer import TerminalObserverWorker
+from core.workers.mail_watcher import MailWatcherWorker
 from core.vision.screen_capture import ScreenCaptureWorker
 from core.vision.ocr_worker import OCRWorker
 from core.vision.window_monitor import WindowMonitorWorker
@@ -37,6 +38,31 @@ from core.workflows.prompt_planner import PromptPlanner
 from core.workers.supervisor import WorkerSupervisor
 from interfaces.cli.health_dashboard import TerminalHealthDashboard
 from interfaces.cli.terminal_ui import TerminalUI
+
+
+def has_audio_output_endpoint() -> bool:
+    """Return True when at least one audio device can actually play output.
+
+    A headless or WASAPI-less session leaves Pipecat blocked on an unread
+    output transport, which stalls shutdown until the safety net fires.
+    """
+    try:
+        import sounddevice as sd
+
+        devices = sd.query_devices()
+    except Exception as exc:
+        get_logger("app").warning(
+            "audio_device_probe_failed",
+            extra={"error": repr(exc)},
+        )
+        return False
+    for device in devices:
+        try:
+            if int(device.get("max_output_channels") or 0) > 0:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
 
 
 class FridayApp:
@@ -107,7 +133,34 @@ class FridayApp:
         self.visual_context.start()
         self.personality_worker = PersonalityWorker(self.event_bus)
         self.workflow_worker = WorkflowWorker(self.event_bus)
-        self.prompt_planner = PromptPlanner(self.ollama_client)
+        # Validate plans against the same registry used by the live tool
+        # worker, rather than a second default registry.
+        # Optional strong planner: a larger model authors the plan, while the
+        # turn itself keeps running on the fast primary model.
+        planner_model = (os.getenv("FRIDAY_PLANNER_MODEL") or "").strip().lower()
+        strong_planner_client = None
+        if planner_model in ("7b", "strong", "large"):
+            strong_planner_client = create_llm_client(
+                base_url=os.getenv("FRIDAY_LLM_BASE_URL_7B", "http://127.0.0.1:8081"),
+                model=os.getenv("FRIDAY_PLANNER_MODEL_NAME", "qwen2.5-7b-instruct-q4_k_m"),
+                timeout_seconds=float(os.getenv("FRIDAY_PLANNER_TIMEOUT_SECONDS", "180")),
+                max_retries=1,
+                provider=self.settings.llm_provider,
+            )
+            # A CPU-only 7B plans at ~2 tok/s. Offload layers for the planner
+            # sidecar only; the rest of the model manager is unchanged.
+            self.model_manager.model_gpu_layers["7b"] = int(
+                os.getenv("FRIDAY_PLANNER_GPU_LAYERS", "24")
+            )
+            self.logger.info(
+                "planner_strong_client_configured",
+                extra={"base_url": strong_planner_client.base_url, "model": strong_planner_client.model},
+            )
+        self.prompt_planner = PromptPlanner(
+            self.ollama_client,
+            tool_registry=self.tool_worker.registry,
+            strong_ollama_client=strong_planner_client,
+        )
         self.recovery_manager = RecoveryManager(self.event_bus)
         healthcheck_interval = max(1.0, min(30.0, self.settings.worker_heartbeat_timeout_seconds / 3))
         from core.audio.transport import AudioTransportWorker
@@ -147,10 +200,32 @@ class FridayApp:
             self.window_monitor,
             TerminalObserverWorker(self.event_bus),
         ]
-        if getattr(self.settings, "audio_enabled", True):
+        audio_enabled = getattr(self.settings, "audio_enabled", True)
+        audio_disabled_reason = "FRIDAY_AUDIO_ENABLED=false"
+        if audio_enabled and not has_audio_output_endpoint():
+            audio_enabled = False
+            audio_disabled_reason = "no_audio_output_endpoint_detected"
+        if audio_enabled:
             runtime_workers[1:1] = [PipecatAudioWorker(self.event_bus), tts_worker]
         else:
-            self.logger.info("audio_pipeline_disabled", extra={"reason": "FRIDAY_AUDIO_ENABLED=false"})
+            self.logger.info("audio_pipeline_disabled", extra={"reason": audio_disabled_reason})
+
+        if getattr(self.settings, "mail_watcher_enabled", False):
+            if self.settings.mail_user and self.settings.mail_password:
+                runtime_workers.append(MailWatcherWorker(
+                    self.event_bus,
+                    host=self.settings.mail_imap_host,
+                    user=self.settings.mail_user,
+                    password=self.settings.mail_password,
+                    poll_interval_seconds=self.settings.mail_poll_interval_seconds,
+                ))
+            else:
+                self.logger.warning(
+                    "mail_watcher_missing_credentials",
+                    extra={"reason": "set FRIDAY_MAIL_USER and FRIDAY_MAIL_PASSWORD"},
+                )
+        else:
+            self.logger.info("mail_watcher_disabled", extra={"reason": "FRIDAY_MAIL_ENABLED!=true"})
 
         self.supervisor = WorkerSupervisor(
             self.event_bus,
@@ -176,6 +251,26 @@ class FridayApp:
         self.terminal_ui = TerminalUI(self.event_bus, self.dashboard)
         self._shutdown_event = asyncio.Event()
         self._started = False
+
+    async def _ensure_planner_sidecar(self) -> None:
+        """Start the strong planner server on demand instead of by hand.
+
+        Only runs when FRIDAY_PLANNER_MODEL asked for a strong planner. A
+        failure here is logged and planning falls back to the primary model;
+        it must never block startup.
+        """
+        if self.prompt_planner.strong_planner is None:
+            return
+        if self.prompt_planner._endpoint_healthy():
+            self.logger.info("planner_sidecar_already_running")
+            return
+        process, error = await self.model_manager._start_healthy_process("7b", port=8081)
+        if process is None:
+            self.logger.warning("planner_sidecar_start_failed", extra={"error": error})
+            return
+        self.model_manager.model_processes["7b"] = process
+        self.prompt_planner._strong_health_checked_at = 0.0
+        self.logger.info("planner_sidecar_started", extra={"port": 8081})
 
     async def run(self) -> None:
         await self.start()
@@ -211,6 +306,7 @@ class FridayApp:
         ollama_available = await self.ollama_client.health_check()
         if not ollama_available:
             self.logger.warning("ollama_unavailable_at_startup", extra={"model": self.ollama_client.model})
+        await self._ensure_planner_sidecar()
         
         self.event_bus.subscribe(EventType.SYSTEM_SHUTDOWN_REQUESTED, self._handle_shutdown)
         await self.intent_router.start()

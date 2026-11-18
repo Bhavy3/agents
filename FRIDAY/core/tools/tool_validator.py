@@ -15,10 +15,10 @@ class ToolValidator:
         self._forbidden_patterns = [
             re.compile(r"rm\s+-rf\s+[/~]"),
             re.compile(r"format\s+[a-z]:", re.IGNORECASE),
-            re.compile(r"powershell\s+.*-enc", re.IGNORECASE),
+            re.compile(r"powershell[^\n]*-enc", re.IGNORECASE),
             re.compile(r"shutdown\s+/[st]", re.IGNORECASE),
             re.compile(r"mkfs", re.IGNORECASE),
-            re.compile(r"mv\s+.*\s+/dev/null"),
+            re.compile(r"mv\s+\S+\s+/dev/null"),
             re.compile(r"dd\s+if="),
         ]
 
@@ -59,6 +59,11 @@ class ToolValidator:
             "press_key",
             "keyboard_shortcut",
             "move_mouse_to",
+            "desktop_click",
+            "desktop_type",
+            "desktop_launch",
+            "browser_click",
+            "browser_type",
         ]:
             risk = ToolRisk.RESTRICTED
         elif tool_name in ["execute_shell", "edit_system_config"]:

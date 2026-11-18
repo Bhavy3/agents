@@ -43,6 +43,7 @@ class ActionGraphRunner:
             for node in graph.nodes:
                 if node.state == "RUNNING":
                     node.state = "CANCELLED"
-            return ToolResult(False, "", "Graph execution cancelled by operator")
+            # Mark the graph first, then let the cancellation propagate.
+            raise
         except Exception as e:
             return ToolResult(False, "", f"Graph execution error: {str(e)}")

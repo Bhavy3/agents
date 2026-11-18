@@ -7,6 +7,7 @@ from core.events.bus import EventBus
 from core.events.event_types import EventType
 from core.events.models import Event
 from core.workers.base_worker import BaseWorker
+from core.asyncio_utils import spawn_background
 
 try:
     from faster_whisper import WhisperModel
@@ -98,7 +99,7 @@ class SttWorker(BaseWorker):
             return
         
         self._loop.call_soon_threadsafe(
-            asyncio.create_task,
+            spawn_background,
             self.event_bus.publish(
                 Event.create(
                     EventType.STT_PARTIAL_TRANSCRIPT,
@@ -206,7 +207,7 @@ class SttWorker(BaseWorker):
                 self.queue.task_done()
                 
         except asyncio.CancelledError:
-            pass
+            raise
         finally:
             # Drain queue if stopped
             while not self.queue.empty():

@@ -19,7 +19,7 @@ set -e
 # defaulting to post so manually registered PreToolUse hooks are recorded as
 # tool_start instead of being silently misclassified as tool_complete.
 HOOK_PHASE="${1:-}"
-if [ -z "$HOOK_PHASE" ]; then
+if [[ -z "$HOOK_PHASE" ]]; then
   case "${CLAUDE_HOOK_EVENT_NAME:-}" in
     PreToolUse|pretooluse|pre_tool_use|pre) HOOK_PHASE="pre" ;;
     PostToolUse|posttooluse|post_tool_use|post) HOOK_PHASE="post" ;;
@@ -35,7 +35,7 @@ fi
 INPUT_JSON=$(cat)
 
 # Exit if no input
-if [ -z "$INPUT_JSON" ]; then
+if [[ -z "$INPUT_JSON" ]]; then
   exit 0
 fi
 
@@ -67,7 +67,7 @@ _is_windows_app_installer_stub() {
 }
 
 resolve_python_cmd() {
-  if [ -n "${CLV2_PYTHON_CMD:-}" ] && command -v "$CLV2_PYTHON_CMD" >/dev/null 2>&1; then
+  if [[ -n "${CLV2_PYTHON_CMD:-}" ]] && command -v "$CLV2_PYTHON_CMD" >/dev/null 2>&1; then
     printf '%s\n' "$CLV2_PYTHON_CMD"
     return 0
   fi
@@ -86,7 +86,7 @@ resolve_python_cmd() {
 }
 
 PYTHON_CMD="$(resolve_python_cmd 2>/dev/null || true)"
-if [ -z "$PYTHON_CMD" ]; then
+if [[ -z "$PYTHON_CMD" ]]; then
   echo "[observe] No python interpreter found, skipping observation" >&2
   exit 0
 fi
@@ -114,9 +114,9 @@ except(KeyError, TypeError, ValueError):
 ' 2>/dev/null || echo "")
 
 # If cwd was provided in stdin, use it for project detection
-if [ -n "$STDIN_CWD" ] && [ -d "$STDIN_CWD" ]; then
+if [[ -n "$STDIN_CWD" ]] && [[ -d "$STDIN_CWD" ]]; then
   _GIT_ROOT=$(git -C "$STDIN_CWD" rev-parse --show-toplevel 2>/dev/null || true)
-  if [ -n "$_GIT_ROOT" ]; then
+  if [[ -n "$_GIT_ROOT" ]]; then
     export CLAUDE_PROJECT_DIR="$_GIT_ROOT"
     unset CLV2_NO_PROJECT
   else
@@ -138,10 +138,10 @@ fi
 CONFIG_DIR="$(_clv2_resolve_homunculus_dir)"
 
 # Skip if disabled (check both default and CLV2_CONFIG-derived locations)
-if [ -f "$CONFIG_DIR/disabled" ]; then
+if [[ -f "$CONFIG_DIR/disabled" ]]; then
   exit 0
 fi
-if [ -n "${CLV2_CONFIG:-}" ] && [ -f "$(dirname "$CLV2_CONFIG")/disabled" ]; then
+if [[ -n "${CLV2_CONFIG:-}" ]] && [[ -f "$(dirname "$CLV2_CONFIG")/disabled" ]]; then
   exit 0
 fi
 
@@ -171,7 +171,7 @@ _ECC_AGENT_ID=$(echo "$INPUT_JSON" | "$PYTHON_CMD" -c "import json,sys; print(js
 
 # Layer 5: known observer-session path exclusions.
 _ECC_SKIP_PATHS="${ECC_OBSERVE_SKIP_PATHS:-observer-sessions,.claude-mem}"
-if [ -n "$STDIN_CWD" ]; then
+if [[ -n "$STDIN_CWD" ]]; then
   IFS=',' read -ra _ECC_SKIP_ARRAY <<< "$_ECC_SKIP_PATHS"
   for _pattern in "${_ECC_SKIP_ARRAY[@]}"; do
     _pattern="${_pattern#"${_pattern%%[![:space:]]*}"}"
@@ -202,7 +202,7 @@ MAX_FILE_SIZE_MB=10
 
 # Auto-purge observation files older than 30 days (runs once per session)
 PURGE_MARKER="${PROJECT_DIR}/.last-purge"
-if [ ! -f "$PURGE_MARKER" ] || [ "$(find "$PURGE_MARKER" -mtime +1 2>/dev/null)" ]; then
+if [[ ! -f "$PURGE_MARKER" ]] || [[ "$(find "$PURGE_MARKER" -mtime +1 2>/dev/null)" ]]; then
   find "${PROJECT_DIR}" -name "observations-*.jsonl" -mtime +30 -delete 2>/dev/null || true
   touch "$PURGE_MARKER" 2>/dev/null || true
 fi
@@ -261,7 +261,7 @@ except Exception as e:
 # Check if parsing succeeded
 PARSED_OK=$(echo "$PARSED" | "$PYTHON_CMD" -c "import json,sys; print(json.load(sys.stdin).get('parsed', False))" 2>/dev/null || echo "False")
 
-if [ "$PARSED_OK" != "True" ]; then
+if [[ "$PARSED_OK" != "True" ]]; then
   # Fallback: log raw input for debugging (scrub secrets before persisting)
   timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
   export TIMESTAMP="$timestamp"
@@ -296,9 +296,9 @@ print(json.dumps({"timestamp": os.environ["TIMESTAMP"], "event": "parse_error", 
 fi
 
 # Archive if file too large (atomic: rename with unique suffix to avoid race)
-if [ -f "$OBSERVATIONS_FILE" ]; then
+if [[ -f "$OBSERVATIONS_FILE" ]]; then
   file_size_mb=$(du -m "$OBSERVATIONS_FILE" 2>/dev/null | cut -f1)
-  if [ "${file_size_mb:-0}" -ge "$MAX_FILE_SIZE_MB" ]; then
+  if [[ "${file_size_mb:-0}" -ge "$MAX_FILE_SIZE_MB" ]]; then
     archive_dir="${PROJECT_DIR}/observations.archive"
     mkdir -p "$archive_dir"
     mv "$OBSERVATIONS_FILE" "$archive_dir/observations-$(date +%Y%m%d-%H%M%S)-$$.jsonl" 2>/dev/null || true
@@ -353,9 +353,9 @@ def scrub(val):
         return None
     return _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", str(val))
 
-if parsed["input"]:
+if parsed[["input"]]:
     observation["input"] = scrub(parsed["input"])
-if parsed["output"] is not None:
+if parsed[["output"]] is not None:
     observation["output"] = scrub(parsed["output"])
 
 print(json.dumps(observation))
@@ -367,7 +367,7 @@ print(json.dumps(observation))
 LAZY_START_LOCK="${PROJECT_DIR}/.observer-start.lock"
 _REMOVE_FILE_IF_PRESENT() {
   local target="$1"
-  if [ -n "$target" ] && [ -e "$target" ]; then
+  if [[ -n "$target" ]] && [[ -e "$target" ]]; then
     rm -- "$target" 2>/dev/null || true
   fi
 }
@@ -380,7 +380,7 @@ _START_OBSERVER_LOGGED() {
   # serialized here without a second lock -- concurrent hook invocations cannot
   # lose an increment or double-log the warning. Counting at the restart (rather
   # than at detection) also means N racing hooks record one death, not N.
-  if [ "${OBSERVER_DIED:-false}" = "true" ]; then
+  if [[ "${OBSERVER_DIED:-false}" = "true" ]]; then
     _NOTE_OBSERVER_NOSURVIVE
   fi
   "${SKILL_ROOT}/agents/start-observer.sh" start >> "$bootstrap_log" 2>&1 || true
@@ -388,7 +388,7 @@ _START_OBSERVER_LOGGED() {
 
 _CHECK_OBSERVER_RUNNING() {
   local pid_file="$1"
-  if [ -f "$pid_file" ]; then
+  if [[ -f "$pid_file" ]]; then
     local pid
     pid=$(cat "$pid_file" 2>/dev/null)
     # Validate PID is a positive integer (>1) to prevent signaling invalid targets
@@ -432,7 +432,7 @@ _NOTE_OBSERVER_NOSURVIVE() {
   # digits-only check but compares as zero, and since the streak only grows the
   # threshold could never be reached -- silently disabling the diagnostic.
   case "$warn_after" in ''|*[!0-9]*) warn_after=3 ;; *) warn_after=$((10#$warn_after)) ;; esac
-  if [ "$warn_after" -lt 1 ]; then warn_after=3; fi
+  if [[ "$warn_after" -lt 1 ]]; then warn_after=3; fi
   streak=$((streak + 1))
 
   # Warn only on a persisted increment, and only on equality. Both conditions
@@ -477,34 +477,34 @@ _RESET_OBSERVER_NOSURVIVE_STREAK() {
   _REMOVE_FILE_IF_PRESENT "${PROJECT_DIR}/.observer-nosurvive-count"
 }
 
-if [ -f "${CONFIG_DIR}/disabled" ]; then
+if [[ -f "${CONFIG_DIR}/disabled" ]]; then
   OBSERVER_ENABLED=false
 else
   OBSERVER_ENABLED=false
-  if [ -n "${CLV2_CONFIG:-}" ]; then
+  if [[ -n "${CLV2_CONFIG:-}" ]]; then
     CONFIG_FILE="$CLV2_CONFIG"
-  elif [ -f "${CONFIG_DIR}/config.json" ]; then
+  elif [[ -f "${CONFIG_DIR}/config.json" ]]; then
     CONFIG_FILE="${CONFIG_DIR}/config.json"
   else
     CONFIG_FILE="${SKILL_ROOT}/config.json"
   fi
   # Use effective config path for both existence check and reading
   EFFECTIVE_CONFIG="$CONFIG_FILE"
-  if [ -f "$EFFECTIVE_CONFIG" ] && [ -n "$PYTHON_CMD" ]; then
+  if [[ -f "$EFFECTIVE_CONFIG" ]] && [[ -n "$PYTHON_CMD" ]]; then
     _enabled=$(CLV2_CONFIG_PATH="$EFFECTIVE_CONFIG" "$PYTHON_CMD" -c "
 import json, os
 with open(os.environ['CLV2_CONFIG_PATH']) as f:
     cfg = json.load(f)
 print(str(cfg.get('observer', {}).get('enabled', False)).lower())
 " 2>/dev/null || echo "false")
-    if [ "$_enabled" = "true" ]; then
+    if [[ "$_enabled" = "true" ]]; then
       OBSERVER_ENABLED=true
     fi
   fi
 fi
 
 # Check both project-scoped AND global PID files (with stale PID recovery)
-if [ "$OBSERVER_ENABLED" = "true" ]; then
+if [[ "$OBSERVER_ENABLED" = "true" ]]; then
   # Clean up stale PID files first.
   # `if` context (not `|| true`) so `set -e` stays satisfied while we still
   # capture whether either PID file pointed at a live observer.
@@ -517,12 +517,12 @@ if [ "$OBSERVER_ENABLED" = "true" ]; then
   # an old count. This is an idempotent unlink, not a read-modify-write, so it
   # needs no lock. The matching increment runs inside the lazy-start lock, in
   # _START_OBSERVER_LOGGED.
-  if [ "$OBSERVER_ALIVE" = "true" ]; then
+  if [[ "$OBSERVER_ALIVE" = "true" ]]; then
     _RESET_OBSERVER_NOSURVIVE_STREAK
   fi
 
   # Check if observer is now running after cleanup
-  if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
+  if [[ ! -f "${PROJECT_DIR}/.observer.pid" ]] && [[ ! -f "${CONFIG_DIR}/.observer.pid" ]]; then
     # Use flock if available (Linux), fallback for macOS
     if command -v flock >/dev/null 2>&1; then
       (
@@ -530,7 +530,7 @@ if [ "$OBSERVER_ENABLED" = "true" ]; then
         # Double-check PID files after acquiring lock
         _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid" || true
         _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid" || true
-        if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
+        if [[ ! -f "${PROJECT_DIR}/.observer.pid" ]] && [[ ! -f "${CONFIG_DIR}/.observer.pid" ]]; then
           _START_OBSERVER_LOGGED
         fi
       ) 9>"$LAZY_START_LOCK"
@@ -543,7 +543,7 @@ if [ "$OBSERVER_ENABLED" = "true" ]; then
           lockfile -r 1 -l 30 "$LAZY_START_LOCK" 2>/dev/null || exit 0
           _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid" || true
           _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid" || true
-          if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
+          if [[ ! -f "${PROJECT_DIR}/.observer.pid" ]] && [[ ! -f "${CONFIG_DIR}/.observer.pid" ]]; then
             _START_OBSERVER_LOGGED
           fi
           _REMOVE_FILE_IF_PRESENT "$LAZY_START_LOCK"
@@ -555,7 +555,7 @@ if [ "$OBSERVER_ENABLED" = "true" ]; then
           mkdir "${LAZY_START_LOCK}.d" 2>/dev/null || exit 0
           _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid" || true
           _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid" || true
-          if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
+          if [[ ! -f "${PROJECT_DIR}/.observer.pid" ]] && [[ ! -f "${CONFIG_DIR}/.observer.pid" ]]; then
             _START_OBSERVER_LOGGED
           fi
         )
@@ -584,7 +584,7 @@ touch "$ACTIVITY_FILE" 2>/dev/null || true
 should_signal=0
 
 _clv2_bump_signal_counter() {
-  if [ -f "$SIGNAL_COUNTER_FILE" ]; then
+  if [[ -f "$SIGNAL_COUNTER_FILE" ]]; then
     counter=$(cat "$SIGNAL_COUNTER_FILE" 2>/dev/null || echo 0)
     # Guard against a corrupt counter file: a non-integer value would abort the
     # hook under `set -e` at the arithmetic below.
@@ -592,7 +592,7 @@ _clv2_bump_signal_counter() {
       ''|*[!0-9]*) counter=0 ;;
     esac
     counter=$((counter + 1))
-    if [ "$counter" -ge "$SIGNAL_EVERY_N" ]; then
+    if [[ "$counter" -ge "$SIGNAL_EVERY_N" ]]; then
       should_signal=1
       counter=0
     fi
@@ -621,7 +621,7 @@ else
   # live re-acquirer's directory, reintroducing the very race this fixes.
   _signal_lock_held=0
   _signal_lock_spins=0
-  while [ "$_signal_lock_spins" -lt 100 ]; do
+  while [[ "$_signal_lock_spins" -lt 100 ]]; do
     if mkdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null; then
       # EXIT cleans up on normal completion. INT/TERM must release AND exit:
       # a signal trap that only released the lock would otherwise fall through
@@ -635,7 +635,7 @@ else
     _signal_lock_spins=$((_signal_lock_spins + 1))
     sleep 0.02
   done
-  if [ "$_signal_lock_held" -eq 1 ]; then
+  if [[ "$_signal_lock_held" -eq 1 ]]; then
     # Bump only under the held lock -- never an unlocked read-modify-write.
     _clv2_bump_signal_counter
     rmdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null || true
@@ -648,10 +648,10 @@ else
 fi
 
 # Signal observer if running and throttle allows (check both project-scoped and global observer, deduplicate)
-if [ "$should_signal" -eq 1 ]; then
+if [[ "$should_signal" -eq 1 ]]; then
   signaled_pids=" "
   for pid_file in "${PROJECT_DIR}/.observer.pid" "${CONFIG_DIR}/.observer.pid"; do
-    if [ -f "$pid_file" ]; then
+    if [[ -f "$pid_file" ]]; then
       observer_pid=$(cat "$pid_file" 2>/dev/null || true)
       # Validate PID is a positive integer (>1)
       case "$observer_pid" in

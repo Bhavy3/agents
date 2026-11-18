@@ -120,6 +120,9 @@ class ResponseAggregator:
         state.is_cancelled = True
         if self.metrics:
             self.metrics.stream_error_count += 1
+        # Cancellation during shutdown must not raise against a stopped bus.
+        if not getattr(self.event_bus, "_running", False):
+            return
         await self.event_bus.publish(
             Event.create(
                 EventType.STREAM_CANCELLED,

@@ -26,7 +26,7 @@ _CLV2_PROJECTS_DIR="${_CLV2_HOMUNCULUS_DIR}/projects"
 _CLV2_REGISTRY_FILE="${_CLV2_HOMUNCULUS_DIR}/projects.json"
 
 _clv2_resolve_python_cmd() {
-  if [ -n "${CLV2_PYTHON_CMD:-}" ] && command -v "$CLV2_PYTHON_CMD" >/dev/null 2>&1; then
+  if [[ -n "${CLV2_PYTHON_CMD:-}" ]] && command -v "$CLV2_PYTHON_CMD" >/dev/null 2>&1; then
     printf '%s\n' "$CLV2_PYTHON_CMD"
     return 0
   fi
@@ -68,7 +68,7 @@ _clv2_normalize_remote_url() {
   url=$(printf '%s' "$url" | sed -E 's|^[^@/:]+@([^:/]+):|\1/|')
   url=$(printf '%s' "$url" | sed -E 's|\.git/?$||; s|/+$||')
 
-  if [ "$is_network" = "1" ]; then
+  if [[ "$is_network" = "1" ]]; then
     printf '%s' "$url" | tr '[:upper:]' '[:lower:]'
   else
     printf '%s' "$url"
@@ -96,7 +96,7 @@ _clv2_detect_project() {
   local project_id=""
   local source_hint=""
 
-  if [ "${CLV2_NO_PROJECT:-0}" = "1" ]; then
+  if [[ "${CLV2_NO_PROJECT:-0}" = "1" ]]; then
     _CLV2_PROJECT_ID="global"
     _CLV2_PROJECT_NAME="global"
     _CLV2_PROJECT_ROOT=""
@@ -106,10 +106,10 @@ _clv2_detect_project() {
   fi
 
   # 1. Try CLAUDE_PROJECT_DIR env var (explicit override)
-  if [ -n "$CLAUDE_PROJECT_DIR" ] && [ -d "$CLAUDE_PROJECT_DIR" ]; then
+  if [[ -n "$CLAUDE_PROJECT_DIR" ]] && [[ -d "$CLAUDE_PROJECT_DIR" ]]; then
     if command -v git &>/dev/null; then
       project_root=$(git -C "$CLAUDE_PROJECT_DIR" rev-parse --show-toplevel 2>/dev/null || true)
-      if [ -n "$project_root" ]; then
+      if [[ -n "$project_root" ]]; then
         source_hint="env"
       fi
     fi
@@ -117,24 +117,24 @@ _clv2_detect_project() {
     # a project root (path-hash identity) rather than collapsing to the shared
     # `global` bucket. Gated on the explicit env var so an arbitrary non-git cwd
     # never becomes a "project" — priority 2 below stays git-only on purpose.
-    if [ -z "$project_root" ]; then
+    if [[ -z "$project_root" ]]; then
       project_root=$(cd "$CLAUDE_PROJECT_DIR" 2>/dev/null && pwd -P)
-      if [ -n "$project_root" ]; then
+      if [[ -n "$project_root" ]]; then
         source_hint="env-nogit"
       fi
     fi
   fi
 
   # 2. Try git repo root from CWD (only if git is available)
-  if [ -z "$project_root" ] && command -v git &>/dev/null; then
+  if [[ -z "$project_root" ]] && command -v git &>/dev/null; then
     project_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
-    if [ -n "$project_root" ]; then
+    if [[ -n "$project_root" ]]; then
       source_hint="git"
     fi
   fi
 
   # 3. No project detected — fall back to global
-  if [ -z "$project_root" ]; then
+  if [[ -z "$project_root" ]]; then
     _CLV2_PROJECT_ID="global"
     _CLV2_PROJECT_NAME="global"
     _CLV2_PROJECT_ROOT=""
@@ -154,7 +154,7 @@ _clv2_detect_project() {
   # fall back to path hash (machine-specific but still useful)
   local remote_url=""
   if command -v git &>/dev/null; then
-    if [ "$source_hint" = "git" ] || [ -e "${project_root}/.git" ]; then
+    if [[ "$source_hint" = "git" ]] || [[ -e "${project_root}/.git" ]]; then
       remote_url=$(git -C "$project_root" remote get-url origin 2>/dev/null || true)
     fi
   fi
@@ -162,18 +162,18 @@ _clv2_detect_project() {
   local raw_remote_url="$remote_url"
 
   # Strip embedded credentials from remote URL (e.g., https://ghp_xxxx@github.com/...)
-  if [ -n "$remote_url" ]; then
+  if [[ -n "$remote_url" ]]; then
     remote_url=$(printf '%s' "$remote_url" | sed -E 's|://[^@]+@|://|')
   fi
 
   local legacy_hash_input="${remote_url:-$project_root}"
   local normalized_remote=""
-  if [ -n "$remote_url" ]; then
+  if [[ -n "$remote_url" ]]; then
     normalized_remote=$(_clv2_normalize_remote_url "$remote_url")
   fi
 
   local fallback_root="$project_root"
-  if [ -z "$remote_url" ]; then
+  if [[ -z "$remote_url" ]]; then
     local main_worktree_root
     main_worktree_root=$(_clv2_main_worktree_root "$project_root")
     [ -n "$main_worktree_root" ] && fallback_root="$main_worktree_root"
@@ -184,7 +184,7 @@ _clv2_detect_project() {
   # Pass the value via env var and encode as UTF-8 inside Python so the hash
   # is locale-independent (shells vary between UTF-8 / CP932 / CP1252, which
   # would otherwise produce different hashes for the same non-ASCII path).
-  if [ -n "$_CLV2_PYTHON_CMD" ]; then
+  if [[ -n "$_CLV2_PYTHON_CMD" ]]; then
     project_id=$(_CLV2_HASH_INPUT="$hash_input" "$_CLV2_PYTHON_CMD" -c '
 import os, hashlib
 s = os.environ["_CLV2_HASH_INPUT"]
@@ -193,7 +193,7 @@ print(hashlib.sha256(s.encode("utf-8")).hexdigest()[:12])
   fi
 
   # Fallback if Python is unavailable or hash generation failed.
-  if [ -z "$project_id" ]; then
+  if [[ -z "$project_id" ]]; then
     project_id=$(printf '%s' "$hash_input" | shasum -a 256 2>/dev/null | cut -c1-12 || \
                  printf '%s' "$hash_input" | sha256sum 2>/dev/null | cut -c1-12 || \
                  echo "fallback")
@@ -201,7 +201,7 @@ print(hashlib.sha256(s.encode("utf-8")).hexdigest()[:12])
 
   # Backward compatibility: migrate a single legacy project directory from
   # credential-stripped or raw remote hashes to the normalized remote hash.
-  if [ -n "$_CLV2_PYTHON_CMD" ] && [ ! -d "${_CLV2_PROJECTS_DIR}/${project_id}" ]; then
+  if [[ -n "$_CLV2_PYTHON_CMD" ]] && [[ ! -d "${_CLV2_PROJECTS_DIR}/${project_id}" ]]; then
     local legacy_inputs=()
     [ -n "$legacy_hash_input" ] && [ "$legacy_hash_input" != "$hash_input" ] \
       && legacy_inputs+=("$legacy_hash_input")
@@ -216,7 +216,7 @@ import os, hashlib
 s = os.environ["_CLV2_HASH_INPUT"]
 print(hashlib.sha256(s.encode("utf-8")).hexdigest()[:12])
 ' 2>/dev/null)
-      if [ -n "$legacy_id" ] && [ "$legacy_id" != "$project_id" ] \
+      if [[ -n "$legacy_id" ]] && [[ "$legacy_id" != "$project_id" ]] \
          && [ -d "${_CLV2_PROJECTS_DIR}/${legacy_id}" ]; then
         if mv "${_CLV2_PROJECTS_DIR}/${legacy_id}" "${_CLV2_PROJECTS_DIR}/${project_id}" 2>/dev/null; then
           break
@@ -255,7 +255,7 @@ _clv2_update_project_registry() {
 
   mkdir -p "$(dirname "$_CLV2_REGISTRY_FILE")"
 
-  if [ -z "$_CLV2_PYTHON_CMD" ]; then
+  if [[ -z "$_CLV2_PYTHON_CMD" ]]; then
     return 0
   fi
 
@@ -326,7 +326,7 @@ PROJECT_NAME="$_CLV2_PROJECT_NAME"
 PROJECT_ROOT="$_CLV2_PROJECT_ROOT"
 PROJECT_DIR="$_CLV2_PROJECT_DIR"
 
-if [ -n "$PROJECT_ROOT" ]; then
+if [[ -n "$PROJECT_ROOT" ]]; then
   CLV2_OBSERVER_SENTINEL_FILE="${PROJECT_ROOT}/.observer.lock"
 else
   CLV2_OBSERVER_SENTINEL_FILE="${PROJECT_DIR}/.observer.lock"

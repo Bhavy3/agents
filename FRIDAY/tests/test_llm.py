@@ -47,6 +47,24 @@ async def test_llm_fallback_router_handles_failure():
 
 
 @pytest.mark.asyncio
+async def test_llm_fallback_preserves_deterministic_commands():
+    class DummyMetrics:
+        success = False
+        error = "server unavailable"
+        model = "test-model"
+        latency_seconds = 0.0
+
+    with patch("core.llm.ollama_client.OllamaClient.generate") as mock_gen:
+        mock_gen.return_value = (None, DummyMetrics())
+        router = LlmFallbackRouter()
+
+        intent = await router.route("open chrome")
+
+    assert intent.name == IntentName.OPEN_URL
+    assert intent.source == "rules_fallback"
+
+
+@pytest.mark.asyncio
 async def test_llm_fallback_router_bounds_slow_generation(monkeypatch):
     async def never_returns(*args, **kwargs):
         await asyncio.Event().wait()

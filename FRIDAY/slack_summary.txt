@@ -1,0 +1,20 @@
+1. How to get a weekly summary of a Slack channel (5 ways ...
+Source: https://geniusly.ai/blog/slack-channel-weekly-summary
+Evidence kind: search snippet (page not verified)
+Evidence: Oct 26, 2026 · To get a weekly summary of a Slack channel, you have five options. On Slack Pro or higher, use Summarize channel and pick the last seven days, which is on demand and visible only to you. On Business+, add the channel to Recaps for an automatic daily digest, or build a Slackbot skill.
+2. GitHub - Automattic/Slack-Summary: A python application for ...
+Source: https://github.com/Automattic/Slack-Summary
+Evidence kind: search snippet (page not verified)
+Evidence: So to get the key messages from the last 5 days: /summary 5 days. Or to get a summary of the important messages over the last two weeks. /summary 2 weeks. Yask Srivastava (Developer), Ketan Bhatt (Developer), Pranu Sarna (Developer) and Vinayak Mehta (Data Scientist).
+3. Guide to AI features in Slack
+Source: https://slack.com/help/articles/25076892548883-Guide-to-AI-features-in-Slack
+Evidence kind: search snippet (page not verified)
+Evidence: Get caught up after some time away from Slack with a customized summary of your unread channels. With recaps, you can get automated daily summaries for channels that you’re interested in keeping tabs on but don’t want to interrupt you throughout your workday.
+4. View your Slack analytics dashboard
+Source: https://slack.com/help/articles/218407447-View-your-Slack-analytics-dashboard
+Evidence kind: search snippet (page not verified)
+Evidence: To adjust the date range for the data, click Last 28 days or Last 30 days from the dashboard you’re viewing. To view additional data, select Edit columns and choose the data you’d like to add.
+5. Catch Up for Slack: AI Summaries of Channels, Threads &amp; DMs
+Source: https://catchupslack.com/
+Evidence kind: search snippet (page not verified)
+Evidence: Mention @catchup to summarize any Slack channel, thread or DM. Catch up on unread messages on desktop or mobile. Priced per workspace. 30-day free trial.

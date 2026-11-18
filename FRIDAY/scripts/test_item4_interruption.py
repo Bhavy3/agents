@@ -4,7 +4,6 @@ Executes Test Case A (8s mid-response interruption) and Test Case B (rapid-fire 
 Logs all events and stream traces to tests/logs/interruption.log.
 """
 import asyncio
-import audioop
 import os
 import sys
 import time
@@ -32,6 +31,7 @@ from core.audio.tts import TtsWorker
 from core.router.rules import Intent, IntentName
 from core.router.intent_router import IntentRouter
 from core.config.settings import load_settings
+from core.audio.pcm import resample_pcm16
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -40,7 +40,7 @@ def synthesize_spoken_phrase(voice: PiperVoice, phrase: str) -> np.ndarray:
     """Synthesizes real speech using Piper TTS, resampled to 16kHz float32."""
     raw_pcm_chunks = [chunk.audio_int16_bytes for chunk in voice.synthesize(phrase)]
     raw_pcm = b"".join(raw_pcm_chunks)
-    resampled, _ = audioop.ratecv(raw_pcm, 2, 1, 22050, 16000, None)
+    resampled, _ = resample_pcm16(raw_pcm, 22050, 16000)
     audio = np.frombuffer(resampled, dtype=np.int16).astype(np.float32) / 32768.0
     return audio
 

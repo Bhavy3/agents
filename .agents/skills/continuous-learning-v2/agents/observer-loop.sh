@@ -35,11 +35,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 claude_process_alive() {
   local process_pid="$1"
 
-  if [ -z "$process_pid" ]; then
+  if [[ -z "$process_pid" ]]; then
     return 1
   fi
 
-  if [ "$CLAUDE_PROCESS_GROUP" -eq 1 ]; then
+  if [[ "$CLAUDE_PROCESS_GROUP" -eq 1 ]]; then
     kill -0 -- "-$process_pid" 2>/dev/null
   else
     kill -0 "$process_pid" 2>/dev/null
@@ -50,7 +50,7 @@ signal_claude_process() {
   local process_pid="$1"
   local signal_name="$2"
 
-  if [ "$CLAUDE_PROCESS_GROUP" -eq 1 ]; then
+  if [[ "$CLAUDE_PROCESS_GROUP" -eq 1 ]]; then
     kill -"$signal_name" -- "-$process_pid" 2>/dev/null || true
   else
     kill -"$signal_name" "$process_pid" 2>/dev/null || true
@@ -61,13 +61,13 @@ stop_claude_process() {
   local process_pid="$1"
   local attempts=0
 
-  if [ -z "$process_pid" ]; then
+  if [[ -z "$process_pid" ]]; then
     return
   fi
 
   if claude_process_alive "$process_pid"; then
     signal_claude_process "$process_pid" TERM
-    while claude_process_alive "$process_pid" && [ "$attempts" -lt 20 ]; do
+    while claude_process_alive "$process_pid" && [[ "$attempts" -lt 20 ]]; do
       sleep 0.1
       attempts=$((attempts + 1))
     done
@@ -80,19 +80,19 @@ stop_claude_process() {
 }
 
 cleanup_analysis_resources() {
-  if [ -n "$WATCHDOG_PID" ]; then
+  if [[ -n "$WATCHDOG_PID" ]]; then
     kill "$WATCHDOG_PID" 2>/dev/null || true
     wait "$WATCHDOG_PID" 2>/dev/null || true
     WATCHDOG_PID=""
   fi
-  if [ -n "$CLAUDE_PID" ]; then
+  if [[ -n "$CLAUDE_PID" ]]; then
     stop_claude_process "$CLAUDE_PID"
     CLAUDE_PID=""
   fi
 
-  if [ "$RESULT_FDS_OPEN" -eq 1 ]; then
+  if [[ "$RESULT_FDS_OPEN" -eq 1 ]]; then
     { exec 8>&-; } 2>/dev/null || true
-    if [ -n "${LOG_FILE:-}" ]; then
+    if [[ -n "${LOG_FILE:-}" ]]; then
       cat <&9 >> "$LOG_FILE" 2>/dev/null || true
     fi
     { exec 7<&-; } 2>/dev/null || true
@@ -110,7 +110,7 @@ cleanup_analysis_resources() {
 cleanup() {
   cleanup_analysis_resources
   [ -n "$SLEEP_PID" ] && kill "$SLEEP_PID" 2>/dev/null
-  if [ -f "$PID_FILE" ] && [ "$(cat "$PID_FILE" 2>/dev/null)" = "$$" ]; then
+  if [[ -f "$PID_FILE" ]] && [[ "$(cat "$PID_FILE" 2>/dev/null)" = "$$" ]]; then
     rm -f "$PID_FILE"
   fi
   exit 0
@@ -119,7 +119,7 @@ trap cleanup TERM INT
 
 file_mtime_epoch() {
   local file="$1"
-  if [ ! -f "$file" ]; then
+  if [[ ! -f "$file" ]]; then
     printf '0\n'
     return
   fi
@@ -138,7 +138,7 @@ file_mtime_epoch() {
 }
 
 has_active_session_leases() {
-  if [ ! -d "$SESSION_LEASE_DIR" ]; then
+  if [[ ! -d "$SESSION_LEASE_DIR" ]]; then
     return 1
   fi
 
@@ -150,7 +150,7 @@ latest_activity_epoch() {
   observations_epoch="$(file_mtime_epoch "$OBSERVATIONS_FILE")"
   activity_epoch="$(file_mtime_epoch "$ACTIVITY_FILE")"
 
-  if [ "$activity_epoch" -gt "$observations_epoch" ] 2>/dev/null; then
+  if [[ "$activity_epoch" -gt "$observations_epoch" ]] 2>/dev/null; then
     printf '%s\n' "$activity_epoch"
   else
     printf '%s\n' "$observations_epoch"
@@ -167,7 +167,7 @@ exit_if_idle_without_sessions() {
   now_epoch="$(date +%s)"
   idle_for=$(( now_epoch - last_activity ))
 
-  if [ "$last_activity" -eq 0 ] || [ "$idle_for" -ge "$IDLE_TIMEOUT_SECONDS" ]; then
+  if [[ "$last_activity" -eq 0 ]] || [[ "$idle_for" -ge "$IDLE_TIMEOUT_SECONDS" ]]; then
     echo "[$(date)] Observer idle without active session leases for ${idle_for}s; exiting" >> "$LOG_FILE"
     cleanup
   fi
@@ -181,7 +181,7 @@ wait_for_claude_analysis() {
     wait "$child_pid"
     wait_status=$?
 
-    if [ "$wait_status" -eq 0 ]; then
+    if [[ "$wait_status" -eq 0 ]]; then
       return 0
     fi
 
@@ -196,18 +196,18 @@ wait_for_claude_analysis() {
 }
 
 analyze_observations() {
-  if [ ! -f "$OBSERVATIONS_FILE" ]; then
+  if [[ ! -f "$OBSERVATIONS_FILE" ]]; then
     return
   fi
 
   obs_count=$(wc -l < "$OBSERVATIONS_FILE" 2>/dev/null || echo 0)
-  if [ "$obs_count" -lt "$MIN_OBSERVATIONS" ]; then
+  if [[ "$obs_count" -lt "$MIN_OBSERVATIONS" ]]; then
     return
   fi
 
   echo "[$(date)] Analyzing $obs_count observations for project ${PROJECT_NAME}..." >> "$LOG_FILE"
 
-  if [ "${CLV2_IS_WINDOWS:-false}" = "true" ] && [ "${ECC_OBSERVER_ALLOW_WINDOWS:-false}" != "true" ]; then
+  if [[ "${CLV2_IS_WINDOWS:-false}" = "true" ]] && [[ "${ECC_OBSERVER_ALLOW_WINDOWS:-false}" != "true" ]]; then
     echo "[$(date)] Skipping claude analysis on Windows due to known non-interactive hang issue (#295). Set ECC_OBSERVER_ALLOW_WINDOWS=true to override." >> "$LOG_FILE"
     return
   fi
@@ -232,7 +232,7 @@ analyze_observations() {
   # substitutes a trailing X run, so a suffix after it (e.g. `.jsonl`) produces a
   # literal, non-random name that wedges every later cycle with "File exists" (#2417).
   analysis_file="$(mktemp "${observer_tmp_dir}/ecc-observer-analysis.jsonl.XXXXXX")"
-  if [ -z "$analysis_file" ] || [ ! -f "$analysis_file" ]; then
+  if [[ -z "$analysis_file" ]] || [[ ! -f "$analysis_file" ]]; then
     echo "[$(date)] Failed to create observer analysis file; retaining observations for retry" >> "$LOG_FILE"
     return
   fi
@@ -252,14 +252,14 @@ analyze_observations() {
   # Keep the relative path on Windows (Git Bash/MSYS2), where absolute paths
   # from mktemp can contain /c/ prefixes that the Claude subprocess cannot
   # resolve (#842, #2673).
-  if [ "${CLV2_IS_WINDOWS:-false}" = "true" ]; then
+  if [[ "${CLV2_IS_WINDOWS:-false}" = "true" ]]; then
     analysis_relpath=".observer-tmp/$(basename "$analysis_file")"
   else
     analysis_relpath="$analysis_file"
   fi
 
   prompt_file="$(mktemp "${observer_tmp_dir}/ecc-observer-prompt.XXXXXX")"
-  if [ -z "$prompt_file" ] || [ ! -f "$prompt_file" ]; then
+  if [[ -z "$prompt_file" ]] || [[ ! -f "$prompt_file" ]]; then
     echo "[$(date)] Failed to create observer prompt file; retaining observations for retry" >> "$LOG_FILE"
     cleanup_analysis_resources
     return
@@ -321,7 +321,7 @@ PROMPT
   prompt_content="$(cat "$prompt_file" 2>/dev/null || true)"
   rm -f "$prompt_file"
   ACTIVE_PROMPT_FILE=""
-  if [ -z "$prompt_content" ]; then
+  if [[ -z "$prompt_content" ]]; then
     echo "[$(date)] Failed to load observer prompt content, skipping analysis" >> "$LOG_FILE"
     cleanup_analysis_resources
     return
@@ -332,12 +332,12 @@ PROMPT
   # The old hardcoded default of 20 is insufficient for the 500-line MAX_ANALYSIS_LINES
   # default: Claude hits --max-turns before it can write all discovered instinct files.
   # Formula: 1 turn per 10 analysis lines, floor 20, cap 100. (#2035)
-  if [ -n "${ECC_OBSERVER_MAX_TURNS:-}" ]; then
+  if [[ -n "${ECC_OBSERVER_MAX_TURNS:-}" ]]; then
     max_turns="${ECC_OBSERVER_MAX_TURNS}"
   else
     max_turns=$(( analysis_count / 10 ))
-    if [ "$max_turns" -lt 20 ]; then max_turns=20; fi
-    if [ "$max_turns" -gt 100 ]; then max_turns=100; fi
+    if [[ "$max_turns" -lt 20 ]]; then max_turns=20; fi
+    if [[ "$max_turns" -gt 100 ]]; then max_turns=100; fi
   fi
   exit_code=0
 
@@ -350,7 +350,7 @@ PROMPT
       ;;
   esac
 
-  if [ "$max_turns" -lt 4 ]; then
+  if [[ "$max_turns" -lt 4 ]]; then
     max_turns=20
   fi
 
@@ -359,7 +359,7 @@ PROMPT
   cd "$PROJECT_DIR" || { echo "[$(date)] Failed to cd to PROJECT_DIR ($PROJECT_DIR), skipping analysis" >> "$LOG_FILE"; cleanup_analysis_resources; return; }
 
   analysis_result_file="$(mktemp "${observer_tmp_dir}/ecc-observer-result.XXXXXX")"
-  if [ -z "$analysis_result_file" ] || [ ! -f "$analysis_result_file" ]; then
+  if [[ -z "$analysis_result_file" ]] || [[ ! -f "$analysis_result_file" ]]; then
     echo "[$(date)] Failed to create observer result file, skipping analysis" >> "$LOG_FILE"
     cleanup_analysis_resources
     return
@@ -375,7 +375,7 @@ PROMPT
     cleanup_analysis_resources
     return
   fi
-  if ! rm -f "$analysis_result_file" || [ -e "$analysis_result_file" ] || [ -L "$analysis_result_file" ]; then
+  if ! rm -f "$analysis_result_file" || [[ -e "$analysis_result_file" ]] || [[ -L "$analysis_result_file" ]]; then
     echo "[$(date)] Failed to unlink observer result file, skipping analysis" >> "$LOG_FILE"
     cleanup_analysis_resources
     return
@@ -409,7 +409,7 @@ PROMPT
       echo "[$(date)] Claude analysis timed out after ${timeout_seconds}s; terminating process" >> "$LOG_FILE"
       signal_claude_process "$CLAUDE_PID" TERM
       grace_attempts=0
-      while claude_process_alive "$CLAUDE_PID" && [ "$grace_attempts" -lt 20 ]; do
+      while claude_process_alive "$CLAUDE_PID" && [[ "$grace_attempts" -lt 20 ]]; do
         sleep 0.1
         grace_attempts=$((grace_attempts + 1))
       done
@@ -450,12 +450,12 @@ PROMPT
   ACTIVE_RESULT_FILE=""
   ACTIVE_ANALYSIS_FILE=""
 
-  if [ "$exit_code" -ne 0 ]; then
+  if [[ "$exit_code" -ne 0 ]]; then
     echo "[$(date)] Claude analysis failed (exit $exit_code); retaining observations for retry" >> "$LOG_FILE"
     return
   fi
 
-  if [ "$analysis_complete" -ne 1 ]; then
+  if [[ "$analysis_complete" -ne 1 ]]; then
     echo "[$(date)] Claude analysis incomplete (completion record missing); retaining observations for retry" >> "$LOG_FILE"
     return
   fi
@@ -463,7 +463,7 @@ PROMPT
   # Archive observations only after process success and the current analysis
   # result's exact completion record. A semantic failure can still exit zero,
   # so exit status alone must not discard the only live copy (#2370, #2673).
-  if [ -f "$OBSERVATIONS_FILE" ]; then
+  if [[ -f "$OBSERVATIONS_FILE" ]]; then
     archive_dir="${PROJECT_DIR}/observations.archive"
     mkdir -p "$archive_dir"
     mv "$OBSERVATIONS_FILE" "$archive_dir/processed-$(date +%Y%m%d-%H%M%S)-$$.jsonl" 2>/dev/null || true
@@ -476,7 +476,7 @@ on_usr1() {
 
   # Re-entrancy guard: defer the nudge so the main loop runs a follow-up
   # analysis immediately after the current analysis finishes.
-  if [ "$ANALYZING" -eq 1 ]; then
+  if [[ "$ANALYZING" -eq 1 ]]; then
     PENDING_ANALYSIS=1
     echo "[$(date)] Analysis already in progress, deferring signal" >> "$LOG_FILE"
     return
@@ -487,7 +487,7 @@ on_usr1() {
   # Cooldown: skip if last analysis was too recent (#521)
   now_epoch=$(date +%s)
   elapsed=$(( now_epoch - LAST_ANALYSIS_EPOCH ))
-  if [ "$elapsed" -lt "$ANALYSIS_COOLDOWN" ]; then
+  if [[ "$elapsed" -lt "$ANALYSIS_COOLDOWN" ]]; then
     echo "[$(date)] Analysis cooldown active (${elapsed}s < ${ANALYSIS_COOLDOWN}s), skipping" >> "$LOG_FILE"
     return
   fi
@@ -504,7 +504,7 @@ trap on_usr1 USR1
 # such as analyze_observations without starting the observer loop. The only
 # production caller (start-observer.sh) executes the script, so $0 equals
 # BASH_SOURCE[0] there and this guard is a no-op (#2370).
-if [ "${BASH_SOURCE[0]}" != "${0}" ]; then
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
   return 0 2>/dev/null || true
 fi
 
@@ -518,7 +518,7 @@ echo "[$(date)] Observer started for ${PROJECT_NAME} (PID: $$)" >> "$LOG_FILE"
 while true; do
   exit_if_idle_without_sessions
 
-  if [ "$PENDING_ANALYSIS" -eq 1 ]; then
+  if [[ "$PENDING_ANALYSIS" -eq 1 ]]; then
     PENDING_ANALYSIS=0
     USR1_FIRED=0
     ANALYZING=1
@@ -534,7 +534,7 @@ while true; do
   SLEEP_PID=""
 
   exit_if_idle_without_sessions
-  if [ "$USR1_FIRED" -eq 1 ]; then
+  if [[ "$USR1_FIRED" -eq 1 ]]; then
     USR1_FIRED=0
   else
     ANALYZING=1

@@ -97,7 +97,17 @@ class TtsWorker(BaseWorker):
             return False
 
     async def _handle_turn_started(self, event: Event) -> None:
-        self.active_turn_id = event.payload.get("turn_id")
+        turn_id = event.payload.get("turn_id")
+        if self.active_turn_id and self.active_turn_id != turn_id:
+            self._stop_playback.set()
+            while not self._playback_queue.empty():
+                try:
+                    self._playback_queue.get_nowait()
+                    self._playback_queue.task_done()
+                except queue.Empty:
+                    break
+            self._stop_playback.clear()
+        self.active_turn_id = turn_id
         self._synthesis_lock = asyncio.Lock()
         self._stop_playback.clear()
 
@@ -153,6 +163,13 @@ class TtsWorker(BaseWorker):
                     self.logger.warning("tts_queue_full_dropping_end_marker")
 
     async def _handle_interruption(self, event: Event) -> None:
+        event_turn_id = event.payload.get("turn_id")
+        if event_turn_id and self.active_turn_id and event_turn_id != self.active_turn_id:
+            self.logger.debug(
+                "stale_tts_interruption_ignored",
+                extra={"received_turn": event_turn_id, "active_turn": self.active_turn_id},
+            )
+            return
         self.logger.info("tts_interruption_received", extra={"turn_id": event.payload.get("turn_id"), "active": self.active_turn_id})
         self._stop_playback.set()
         self._text_buffer = ""
@@ -242,7 +259,7 @@ class TtsWorker(BaseWorker):
             except queue.Empty:
                 pass
             except asyncio.CancelledError:
-                break
+                raise
             except Exception as e:
                 self.logger.error("tts_publish_loop_error", extra={"error": str(e)})
                 await asyncio.sleep(0.1)
@@ -255,7 +272,9 @@ class TtsWorker(BaseWorker):
             try:
                 await self._publish_task
             except asyncio.CancelledError:
-                pass
+                # Only the publish task we cancelled is expected here.
+                if not self._publish_task.cancelled():
+                    raise
 
     async def work(self) -> None:
         try:
@@ -270,6 +289,6 @@ class TtsWorker(BaseWorker):
                 
                 await asyncio.sleep(1.0)
         except asyncio.CancelledError:
-            pass
+            raise
         finally:
             self._stop_playback.set()

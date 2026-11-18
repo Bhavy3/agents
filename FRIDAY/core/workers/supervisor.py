@@ -133,6 +133,8 @@ class WorkerSupervisor:
                     except Exception as exc:
                         error = exc
                     except asyncio.CancelledError:
+                        if not worker_task.cancelled():
+                            raise
                         error = RuntimeError("worker task was cancelled")
 
                 if error is None and self._running and not worker.should_stop:

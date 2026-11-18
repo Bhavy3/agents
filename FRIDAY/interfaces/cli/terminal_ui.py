@@ -21,10 +21,13 @@ class TerminalUI:
         self.cli_input_enabled = cli_input_enabled
         self.logger = get_logger("interfaces.cli")
         self._running = False
+        self._pending_confirmation: str | None = None
 
     async def start(self) -> None:
         self._running = True
         self.event_bus.subscribe(EventType.RESPONSE_READY, self.handle_response)
+        self.event_bus.subscribe(EventType.ACTION_CONFIRMATION_REQUIRED, self.handle_confirmation_request)
+        self.event_bus.subscribe(EventType.NEW_EMAIL, self.handle_new_email)
         print("FRIDAY online. Type 'help' or 'exit'.")
         if not self.cli_input_enabled:
             while self._running:
@@ -46,6 +49,24 @@ class TerminalUI:
 
     async def handle_command(self, text: str) -> bool:
         cmd = text.strip().lower()
+        if cmd in {"yes", "y", "no", "n"} and self._pending_confirmation is not None:
+            correlation_id = self._pending_confirmation
+            self._pending_confirmation = None
+            approved = cmd in {"yes", "y"}
+            if getattr(self.event_bus, "_running", False):
+                await self.event_bus.publish(
+                    Event.create(
+                        EventType.OPERATOR_CONFIRMATION_RESPONSE,
+                        {"correlation_id": correlation_id, "approved": approved},
+                        "terminal_ui",
+                        correlation_id,
+                    )
+                )
+            print(f"{'Approved' if approved else 'Denied'}: {correlation_id}")
+            return True
+        if cmd in {"yes", "y", "no", "n"}:
+            print("No action is waiting for confirmation.")
+            return True
         if cmd in {"status", "health", "dashboard"} and self.dashboard is not None:
             print(self.dashboard.render())
             return True
@@ -73,7 +94,7 @@ class TerminalUI:
                 print(f"Worker {worker_name} not found")
             return True
         if cmd == "help":
-            print("Commands: status, workers, metrics, queue, restart <worker>, quarantine <worker>, help, exit")
+            print("Commands: status, workers, metrics, queue, restart <worker>, quarantine <worker>, yes|no (confirm action), help, exit")
             return True
 
         if cmd in {"exit", "quit", "shutdown friday", "stop friday"}:
@@ -95,3 +116,16 @@ class TerminalUI:
 
     async def handle_response(self, event: Event) -> None:
         print(f"FRIDAY > {event.payload.get('text', '')}")
+
+    async def handle_new_email(self, event: Event) -> None:
+        sender = str(event.payload.get("sender", "unknown"))
+        subject = str(event.payload.get("subject", "(no subject)"))
+        print(f"📬 New mail from {sender}: {subject}")
+
+    async def handle_confirmation_request(self, event: Event) -> None:
+        correlation_id = str(event.payload.get("correlation_id", ""))
+        tool_name = str(event.payload.get("tool_name", "unknown"))
+        risk_level = str(event.payload.get("risk_level", "unknown"))
+        self._pending_confirmation = correlation_id
+        print(f"CONFIRMATION REQUIRED: {tool_name} (risk: {risk_level})")
+        print("Type 'yes' to allow or 'no' to refuse.")

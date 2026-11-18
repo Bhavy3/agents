@@ -113,6 +113,10 @@ EVENT_CONTRACTS: dict[EventType, PayloadSchema] = {
     EventType.ACTION_TIMEOUT: {},
     EventType.ACTION_DENIED: {"reason": str},
     EventType.ACTION_CONFIRMATION_REQUIRED: {"correlation_id": str, "tool_name": str, "risk_level": str},
+    EventType.OPERATOR_CONFIRMATION_RESPONSE: {"correlation_id": str, "approved": bool},
+
+    # Communication (Phase 6 lite)
+    EventType.NEW_EMAIL: {"subject": str, "sender": str, "snippet": str},
     EventType.ACTION_GRAPH_STARTED: {"goal": str, "steps": list},
     EventType.ACTION_GRAPH_COMPLETED: {"graph_id": str, "success": bool},
     EventType.ACTION_GRAPH_FAILED: {"graph_id": str, "error": str},

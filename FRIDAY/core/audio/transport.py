@@ -228,7 +228,8 @@ class AudioTransportWorker(BaseWorker):
                     await self._stop_audio(reason="timeout")
                     break
         except asyncio.CancelledError:
-            pass
+            # Cleanup stays in the finally block; cancellation must propagate.
+            raise
         finally:
             await self._stop_audio(reason="interrupted" if self.should_stop else "finished")
 
